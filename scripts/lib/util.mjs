@@ -161,14 +161,47 @@ export function rel(root, p) {
 // ------------------------------------------------------------------ 外部命令
 
 /**
- * 同步执行外部命令。Windows 下的 .bat/.cmd 必须经 cmd /c 调用（工程规划 §6.4）。
+ * Windows 下把「裸命令名」解析成真实可执行文件路径。
+ *
+ * 背景（已实测）：spawnSync('bun') 在 Windows 上直接 ENOENT —— Node 不会像 shell 那样按
+ * PATHEXT 补全，而 npm 全局安装的 bun 实际是 `bun.cmd` 包装（内核是
+ * `<npm-global>/node_modules/bun/bin/bun.exe`）。因此这里先用 `where` 解出候选，
+ * 优先 .exe，其次 .cmd/.bat（后者必须经 cmd /c 调用）。
+ *
+ * 带路径分隔符的命令（显式路径）原样返回，不做解析。
+ */
+const whereCache = new Map();
+function resolveWindowsCommand(cmd) {
+  if (/[\\/]/.test(cmd)) return cmd;
+  const cached = whereCache.get(cmd);
+  if (cached !== undefined) return cached;
+  let resolved = cmd;
+  const probe = spawnSync('where', [cmd], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  if (!probe.error && probe.status === 0) {
+    // 只保留 Windows 可执行的候选：`where` 会先列出无扩展名的 POSIX shim（如
+    // D:\AppData\npm-global\bun），spawnSync 无法执行它 → 必须过滤，否则修不了 ENOENT。
+    const candidates = (probe.stdout ?? '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && existsSync(line) && /\.(exe|cmd|bat|com)$/i.test(line));
+    const exe = candidates.find((line) => /\.exe$/i.test(line));
+    resolved = exe ?? candidates[0] ?? cmd;
+  }
+  whereCache.set(cmd, resolved);
+  return resolved;
+}
+
+/**
+ * 同步执行外部命令。Windows 下的 .bat/.cmd 必须经 cmd /c 调用（工程规划 §6.4）；
+ * 裸命令名先经 resolveWindowsCommand 解析（否则 spawnSync 不会走 PATHEXT，报 ENOENT）。
  * 返回 { status, stdout, stderr }；stdio 默认 'pipe' 以便脚本自行判定。
  */
 export function run(cmd, args = [], options = {}) {
   const isWin = process.platform === 'win32';
-  const needsShell = isWin && /\.(bat|cmd)$/i.test(cmd);
-  const finalCmd = needsShell ? 'cmd' : cmd;
-  const finalArgs = needsShell ? ['/c', cmd, ...args] : normalizeTarArgs(cmd, args, options.cwd ?? process.cwd());
+  const target = isWin ? resolveWindowsCommand(cmd) : cmd;
+  const needsShell = isWin && /\.(bat|cmd)$/i.test(target);
+  const finalCmd = needsShell ? 'cmd' : target;
+  const finalArgs = needsShell ? ['/c', target, ...args] : normalizeTarArgs(target, args, options.cwd ?? process.cwd());
   const result = spawnSync(finalCmd, finalArgs, {
     cwd: options.cwd,
     env: options.env ?? process.env,
