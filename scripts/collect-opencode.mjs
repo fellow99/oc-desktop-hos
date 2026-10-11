@@ -33,6 +33,7 @@ import {
   log,
   mkdirp,
   parseArgs,
+  readFileHead,
   readPngHeader,
   readText,
   rel,
@@ -132,17 +133,42 @@ function stageBetterSqlite3() {
   );
 }
 
+/** 归档内资源以「包 id」为粒度剪裁：scoped 包为 `@scope/pkg`，普通包为顶层名 */
+function assetPackageId(relativePath) {
+  const parts = relativePath.split('/').filter(Boolean);
+  if (parts.length === 0) return '';
+  return parts[0].startsWith('@') ? parts.slice(0, 2).join('/') : parts[0];
+}
+
+function matchesPrune(id) {
+  return PRUNE_PATTERNS.some((pattern) => pattern.test(id) || pattern.test(`${id}/`));
+}
+
 function pruneNative() {
   const assets = join(STAGE_DIR, 'assets');
   if (!isDir(assets)) return;
-  let removed = 0;
+  const removed = [];
   for (const entry of listDir(assets)) {
-    if (PRUNE_PATTERNS.some((pattern) => pattern.test(entry))) {
-      removeTree(join(assets, entry));
-      removed += 1;
+    const full = join(assets, entry);
+    if (entry.startsWith('@')) {
+      for (const pkg of listDir(full)) {
+        const id = `${entry}/${pkg}`;
+        if (matchesPrune(id)) {
+          removeTree(join(full, pkg));
+          removed.push(id);
+        }
+      }
+      if (listDir(full).length === 0) removeTree(full);
+      continue;
+    }
+    if (matchesPrune(entry)) {
+      removeTree(full);
+      removed.push(entry);
     }
   }
-  if (removed > 0) log('collect-opencode', `已剪裁 ${removed} 个非 arm64 原生件（assets/）`);
+  if (removed.length > 0) {
+    log('collect-opencode', `已剪裁 ${removed.length} 个非 arm64 / 设备不可用的原生包（assets/）: ${removed.join(', ')}`);
+  }
 }
 
 function verifyArchive() {
@@ -158,27 +184,19 @@ function verifyArchive() {
   for (const entry of required) {
     require_(listed.includes(entry), `归档缺少必需条目: ${entry}`);
   }
-  const pruned = listed.filter((line) => PRUNE_PATTERNS.some((pattern) => pattern.test(line.replace('dist-node/assets/', ''))));
-  require_(pruned.length === 0, `归档中仍存在应剪裁的原生件: ${pruned.slice(0, 3).join(', ')}`);
+  const pruned = listed
+    .filter((line) => line.startsWith('dist-node/assets/'))
+    .map((line) => assetPackageId(line.replace('dist-node/assets/', '')))
+    .filter((id) => id !== '' && matchesPrune(id));
+  require_(pruned.length === 0, `归档中仍存在应剪裁的原生包: ${[...new Set(pruned)].slice(0, 5).join(', ')}`);
   log('collect-opencode', `归档校验通过（${total} 个条目）`);
 }
 
 function isElfAarch64(p) {
-  const head = readHead(p, 20);
+  const head = readFileHead(p, 20);
   if (head.length < 20) return false;
   if (head[0] !== 0x7f || head[1] !== 0x45 || head[2] !== 0x4c || head[3] !== 0x46) return false;
   return head.readUInt16LE(18) === 0xb7;
-}
-
-function readHead(p, n) {
-  const fd = require('node:fs').openSync(p, 'r');
-  try {
-    const buf = Buffer.alloc(n);
-    const read = require('node:fs').readSync(fd, buf, 0, n, 0);
-    return buf.subarray(0, read);
-  } finally {
-    require('node:fs').closeSync(fd);
-  }
 }
 
 main();

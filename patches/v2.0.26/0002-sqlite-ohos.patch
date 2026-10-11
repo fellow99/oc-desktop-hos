@@ -12,10 +12,10 @@ index f3b7fb9738..4e0fb3e7db 100644
        "default": "./src/database/sqlite.node.ts"
 diff --git a/packages/core/src/database/sqlite.ohos.ts b/packages/core/src/database/sqlite.ohos.ts
 new file mode 100644
-index 0000000000..e7245716a7
+index 0000000000..cc63d4ad96
 --- /dev/null
 +++ b/packages/core/src/database/sqlite.ohos.ts
-@@ -0,0 +1,257 @@
+@@ -0,0 +1,272 @@
 +/**
 + * HarmonyOS (`ohos`) variant of `#sqlite`.
 + *
@@ -111,8 +111,11 @@ index 0000000000..e7245716a7
 +  const Database = require(specifier) as BetterSqlite3Constructor
 +  const database = new Database(config.filename, {
 +    readonly: config.readonly === true,
-+    // `undefined` keeps better-sqlite3's own default (5000ms), which suits a device better than 0.
-+    timeout: config.timeout,
++    // better-sqlite3 的选项校验会拒绝「存在但为 undefined」的 timeout，因此仅在传入正整数时才带上该键；
++    // 缺省时由 better-sqlite3 使用自己的默认值（5000ms），比传 0 更适合设备。
++    ...(typeof config.timeout === "number" && Number.isInteger(config.timeout) && config.timeout > 0
++      ? { timeout: config.timeout }
++      : {}),
 +    // opencode's `create: false` means "do not create a missing database" -> `fileMustExist`.
 +    fileMustExist: config.create === false,
 +  })
@@ -141,8 +144,20 @@ index 0000000000..e7245716a7
 +  }
 +}
 +
++/**
++ * 加载 node:sqlite（tier 2，仅用于 host 侧门禁）。
++ * 优先用 process.getBuiltinModule（Node ≥22.3）：它直接返回 builtin，绕开 ESM/CJS 加载器，
++ * 因而不会被产物前导通过 module.registerHooks 注册的模块钩子干扰（否则会报
++ * "load hook returned null for source"）。缺省时退回普通 require。
++ */
++function loadNodeSqlite(): Record<string, unknown> {
++  const getBuiltin = (process as unknown as { getBuiltinModule?: (id: string) => unknown }).getBuiltinModule
++  if (typeof getBuiltin === "function") return getBuiltin("node:sqlite") as Record<string, unknown>
++  return require("node:sqlite") as Record<string, unknown>
++}
++
 +function openNodeSqlite(config: Config): SyncDatabase {
-+  const { DatabaseSync } = require("node:sqlite") as {
++  const { DatabaseSync } = loadNodeSqlite() as {
 +    DatabaseSync: new (
 +      filename: string,
 +      options?: {

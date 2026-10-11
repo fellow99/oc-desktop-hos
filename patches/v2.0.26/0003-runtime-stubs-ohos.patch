@@ -1,8 +1,8 @@
 diff --git a/packages/core/package.json b/packages/core/package.json
-index 4e0fb3e7db..7300b4794f 100644
+index f3b7fb9738..a7ce065073 100644
 --- a/packages/core/package.json
 +++ b/packages/core/package.json
-@@ -39,12 +39,14 @@
+@@ -38,12 +38,14 @@
      },
      "#pty": {
        "workerd": "./src/pty/pty.workerd.ts",

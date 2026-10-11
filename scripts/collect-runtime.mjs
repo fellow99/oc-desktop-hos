@@ -130,13 +130,14 @@ const REWRITE_RULES = [
 /**
  * 运行时中本应用不需要的文件（阶段 3 删除）。
  * 删除前断言存在：缺失说明上游外壳结构已变化，必须重新评估，不得静默跳过。
+ *
+ * ⚠️ 当前为**空表**：曾尝试剪裁 4 个蓝牙适配器（BluetoothAdapter / BluetoothLowEnergyAdapter 及其
+ * Bind），但基线的 `web_engine/src/main/ets/jsbindings/JsBindingMethod.ets` 仍静态 import 它们，
+ * 删除后 ArkTS/Rollup 直接编译失败（`Could not resolve "../jsbindings/BluetoothAdapterBind"`）。
+ * 要剪裁必须同时提供 JsBindingMethod.ets 的 overlay（改写 import 与注册行）——登记为 Phase 2 精修项，
+ * 详见 `docs/真机验证记录.md`。蓝牙能力本身已通过**移除权限声明**（web_engine module.json5 overlay）关闭。
  */
-const PRUNE_FILES = [
-  'web_engine/src/main/ets/adapter/BluetoothAdapter.ets',
-  'web_engine/src/main/ets/adapter/BluetoothLowEnergyAdapter.ets',
-  'web_engine/src/main/ets/jsbindings/BluetoothAdapterBind.ets',
-  'web_engine/src/main/ets/jsbindings/BluetoothLowEnergyAdapterBind.ets',
-];
+const PRUNE_FILES = [];
 
 /** 本应用 App 主进程文件（阶段 4 投放；新增 src-main 文件必须在此登记，否则不进 HAP） */
 const APP_FILES = [

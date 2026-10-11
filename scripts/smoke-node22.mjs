@@ -145,9 +145,13 @@ function smokeEnv() {
     OPENCODE_DISABLE_FFF: '1',
     // 产物自带的 assets/（app-archive.bin 等）；prelude 通常已设置，这里显式兜底
     OPENCODE_NODE_ASSETS_DIR: join(PRODUCT_DIR, 'assets'),
-    // host 侧 mock：Windows 无法 dlopen aarch64-ohos 的 better_sqlite3.node，
-    // sqlite 的 ohos 变体会回落到 node:sqlite（见 patches/v2.0.26/0002）。传给真机时不要设这一项。
-    OPENCODE_BETTER_SQLITE3_PATH: process.env.OPENCODE_BETTER_SQLITE3_PATH || 'better-sqlite3',
+    // host 侧：优先用 .cache/smoke-host 里安装的 **Windows 版 better-sqlite3**，从而走与真机同一条 tier 1 路径
+    // （设备侧该 env 指向 <runtimeDir>/node_modules/better-sqlite3）。未安装时退回包名解析。
+    OPENCODE_BETTER_SQLITE3_PATH:
+      process.env.OPENCODE_BETTER_SQLITE3_PATH ||
+      (exists(join(PROJECT_ROOT, '.cache', 'smoke-host', 'node_modules', 'better-sqlite3'))
+        ? join(PROJECT_ROOT, '.cache', 'smoke-host', 'node_modules', 'better-sqlite3')
+        : 'better-sqlite3'),
   };
 }
 
@@ -195,10 +199,10 @@ function downloadSync(url, target) {
   fail(`下载失败: ${url}（curl 不可用或网络不可达）`);
 }
 
-function pickPort() {
+async function pickPort() {
+  const { createServer } = await import('node:net');
   return new Promise((resolvePort, reject) => {
-    const net = require('node:net');
-    const probe = net.createServer();
+    const probe = createServer();
     probe.once('error', reject);
     probe.listen(0, '127.0.0.1', () => {
       const { port } = probe.address();
