@@ -79,7 +79,7 @@ export class PermissionManagerAdapter extends BaseAdapter {
   private ctxAdapter: ContextAdapter;
   private isInitialized: boolean = false;
   private appLabelId: number = 0;
-  private bundleName: string = 'rg.fellow99.oc.OCDesktop';
+  private bundleName: string = 'org.fellow99.oc.OCDesktop';
   private bundleFlags = bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION |
                         bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_METADATA;
 

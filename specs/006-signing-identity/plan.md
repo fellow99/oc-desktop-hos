@@ -32,7 +32,7 @@
 
 | 决策 | 结论 | 依据 |
 |------|------|------|
-| 包名 | `rg.fellow99.oc.OCDesktop`（沿用 V1） | 工程规划 §3.7 |
+| 包名 | `org.fellow99.oc.OCDesktop`（沿用 V1） | 工程规划 §3.7 |
 | 显示名 | `OC Desktop` | 同上 |
 | 改名机制 | 三处同步 + 校验脚本（不靠记忆） | 🔶 同型工程踩坑 |
 | 签名材料注入 | `hvigorfile.ts#afterNodeEvaluate`，仅内存注入不写回 | 工程规划 §3.7 |
@@ -51,7 +51,7 @@
 
 ```js
 appIdentity = {
-  bundleName: 'rg.fellow99.oc.OCDesktop',
+  bundleName: 'org.fellow99.oc.OCDesktop',
   label: 'OC Desktop',
   labelSources: [
     'AppScope/app.json5',
@@ -147,12 +147,12 @@ identity-check（三处 label 一致 + 包名唯一）→ version-check（releas
 ```bash
 # 安装与启动（bundleName 即身份真值）
 hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap
-hdc shell aa start -a EntryAbility -b rg.fellow99.oc.OCDesktop
-hdc uninstall rg.fellow99.oc.OCDesktop        # 对照实验：清空后重装观察 JIT 权限首装行为
+hdc shell aa start -a EntryAbility -b org.fellow99.oc.OCDesktop
+hdc uninstall org.fellow99.oc.OCDesktop        # 对照实验：清空后重装观察 JIT 权限首装行为
 
 # 身份与状态取证
 hdc shell aa dump -a                          # Ability 状态与所属包名
-hdc shell "bm dump -n rg.fellow99.oc.OCDesktop"   # 包信息（命令可用性 ⬜ 待验证）
+hdc shell "bm dump -n org.fellow99.oc.OCDesktop"   # 包信息（命令可用性 ⬜ 待验证）
 hdc shell "hilog -x | grep oc-desktop"
 ```
 

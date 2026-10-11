@@ -131,7 +131,7 @@ R2 分支：pending-probe →（探针结论）→ disabled（记录依据）| e
 
 ```bash
 hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap
-hdc shell aa start -a EntryAbility -b rg.fellow99.oc.OCDesktop
+hdc shell aa start -a EntryAbility -b org.fellow99.oc.OCDesktop
 
 hdc shell "hilog -x | grep oc-desktop"        # 钩子安装结果、代理变量值（脱敏）、__hookError
 # 渲染侧取证（R1，debug 构建）

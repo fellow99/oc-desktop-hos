@@ -50,9 +50,9 @@
 #
 # 产物与上真机（Hap 任务）：
 #   electron\build\default\outputs\default\electron-default-signed.hap
-#     hdc uninstall rg.fellow99.oc.OCDesktop        # 部署前先卸载：清掉 userData 里的旧产物与 marker
+#     hdc uninstall org.fellow99.oc.OCDesktop        # 部署前先卸载：清掉 userData 里的旧产物与 marker
 #     hdc app install -r electron\build\default\outputs\default\electron-default-signed.hap
-#     hdc shell aa start -a EntryAbility -b rg.fellow99.oc.OCDesktop
+#     hdc shell aa start -a EntryAbility -b org.fellow99.oc.OCDesktop
 #     hdc shell "hilog -x | grep oc-desktop"                  # 取证
 #     hdc fport tcp:19229 tcp:9229                            # CDP 端口转发（仅 debug 构建）
 #   （debug 签名才能侧载；release 签名的包安装会报 not trusted app source）
@@ -198,5 +198,5 @@ if ($exitCode -ne 0) {
     Write-Host "`n✗ 构建失败（exit $exitCode）：请检查上方 hvigorw 输出；不要继续安装/分发该产物。" -ForegroundColor Red
     exit $exitCode
 }
-Write-Host "`n✅ 构建成功（exit 0）。安装命令：hdc uninstall rg.fellow99.oc.OCDesktop ; hdc app install -r electron\build\default\outputs\default\electron-default-signed.hap ; hdc shell aa start -a EntryAbility -b rg.fellow99.oc.OCDesktop" -ForegroundColor Green
+Write-Host "`n✅ 构建成功（exit 0）。安装命令：hdc uninstall org.fellow99.oc.OCDesktop ; hdc app install -r electron\build\default\outputs\default\electron-default-signed.hap ; hdc shell aa start -a EntryAbility -b org.fellow99.oc.OCDesktop" -ForegroundColor Green
 exit 0

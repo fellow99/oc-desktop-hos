@@ -151,9 +151,9 @@ Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
 
 # 安装与启动 / 取证
 hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap
-hdc shell aa start -a EntryAbility -b rg.fellow99.oc.OCDesktop
+hdc shell aa start -a EntryAbility -b org.fellow99.oc.OCDesktop
 hdc shell "hilog -x | grep oc-desktop"
-hdc uninstall rg.fellow99.oc.OCDesktop     # 仅在需要清空 userData 对照时使用
+hdc uninstall org.fellow99.oc.OCDesktop     # 仅在需要清空 userData 对照时使用
 ```
 
 - 真机 MUST 记录：设备型号与系统版本、`tarSha256`、HAP 体积、首启耗时、是否命中 003 的解压跳过分支，落 `docs/真机验证记录.md`。

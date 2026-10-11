@@ -20,9 +20,9 @@
 #   # 实参原样透传给 build-hap.ps1（双横线选项可直接透传；单横线选项如 -p 会被 PowerShell 参数绑定截获）。
 #
 # 安装（部署前先卸载，清掉 userData 里的旧产物与 marker）：
-#   hdc uninstall rg.fellow99.oc.OCDesktop
+#   hdc uninstall org.fellow99.oc.OCDesktop
 #   hdc app install -r electron\build\default\outputs\default\electron-default-signed.hap
-#   hdc shell aa start -a EntryAbility -b rg.fellow99.oc.OCDesktop
+#   hdc shell aa start -a EntryAbility -b org.fellow99.oc.OCDesktop
 #
 # 退出码：透传 build-hap.ps1 / hvigorw 的退出码（非零即失败）。
 # ============================================================================

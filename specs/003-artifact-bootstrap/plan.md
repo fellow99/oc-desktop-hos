@@ -144,7 +144,7 @@ ensureArtifact()
 
 ```bash
 hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap
-hdc shell aa start -a EntryAbility -b rg.fellow99.oc.OCDesktop
+hdc shell aa start -a EntryAbility -b org.fellow99.oc.OCDesktop
 hdc shell "hilog -x | grep oc-desktop"        # 记录 sha 前 8 位 / 文件数 / 字节数 / 耗时 / 是否跳过
 
 # 产物与 marker 观察（应用域目录在 shell 侧是否可读 ⬜ 待验证）
@@ -152,7 +152,7 @@ hdc shell "ls -l /data/storage/el2/base/files/opencode-dist"
 hdc shell "cat /data/storage/el2/base/files/opencode-dist.version"
 
 # 升级验证：卸载前记录 marker，重装新 HAP 后再次观察
-hdc uninstall rg.fellow99.oc.OCDesktop        # 仅用于「清空全量」对照实验
+hdc uninstall org.fellow99.oc.OCDesktop        # 仅用于「清空全量」对照实验
 ```
 
 - 真机 MUST 采集：首次解压耗时、二次启动跳过耗时、解压后占用（`du -sh` 类命令可用性 ⬜ 待验证）、首启总耗时，落 `docs/真机验证记录.md`。

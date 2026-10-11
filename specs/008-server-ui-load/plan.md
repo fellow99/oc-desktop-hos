@@ -150,7 +150,7 @@ ready → serving（UI 与 /api/* 同源可用）→ quitting（由 002 触发�
 
 ```bash
 hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap
-hdc shell aa start -a EntryAbility -b rg.fellow99.oc.OCDesktop
+hdc shell aa start -a EntryAbility -b org.fellow99.oc.OCDesktop
 hdc shell "hilog -x | grep oc-desktop"        # 端口、耗时、健康检查尝试次数与状态码
 
 # 外部（局域网）就绪校验：必须带凭据

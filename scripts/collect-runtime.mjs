@@ -79,7 +79,7 @@ const SQLITE_GUIDE_DIR = join(VERSIONS_DIR, 'better-sqlite3编译指导（Electr
 const CACHE_DIR = join(PROJECT_ROOT, '.cache', 'runtime');
 
 /** 期望的应用身份（与 AppScope/app.json5 单一事实源保持一致，阶段 10 守卫） */
-const EXPECTED_BUNDLE_NAME = 'rg.fellow99.oc.OCDesktop';
+const EXPECTED_BUNDLE_NAME = 'org.fellow99.oc.OCDesktop';
 const EXPECTED_APP_LABEL = 'OC Desktop';
 
 /** 拷贝模块时排除的顶层目录（生成物 / 版本控制 / 缓存） */

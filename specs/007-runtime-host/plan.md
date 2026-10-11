@@ -152,7 +152,7 @@ decided → 收敛实现（把非选定候选标为未启用）→ verify（回�
 
 ```bash
 hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap
-hdc shell aa start -a EntryAbility -b rg.fellow99.oc.OCDesktop
+hdc shell aa start -a EntryAbility -b org.fellow99.oc.OCDesktop
 
 # 探针触发与取证
 hdc shell "hilog -x | grep oc-desktop"        # 矩阵行与失败原文

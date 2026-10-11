@@ -7,7 +7,7 @@ import * as path from 'path';
  * 签名材料注入（仅内存，绝不写回 build-profile.json5）。
  *
  * 设计依据：docs/工程规划-V2.md §3.7 / §8。本工程使用自定义 bundleName
- * （rg.fellow99.oc.OCDesktop），因此**不能**复用 com.huawei.ohos_electron 的共享签名，
+ * （org.fellow99.oc.OCDesktop），因此**不能**复用 com.huawei.ohos_electron 的共享签名，
  * 必须用 DevEco Studio 为本包名重新生成证书，并据本包名单独申请 ACL（JIT 权限）。
  *
  * 材料来源（按优先级）：
@@ -19,7 +19,7 @@ import * as path from 'path';
 const PROJECT_ROOT = __dirname;
 
 /** 期望的应用身份：与 AppScope/app.json5 单一事实源对照，防「改了包名忘了签名」 */
-const EXPECTED_BUNDLE_NAME = 'rg.fellow99.oc.OCDesktop';
+const EXPECTED_BUNDLE_NAME = 'org.fellow99.oc.OCDesktop';
 
 type SignMode = 'debug' | 'release';
 

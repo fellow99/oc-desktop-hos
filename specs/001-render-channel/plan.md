@@ -133,7 +133,7 @@ ready 之后渲染异常 → error（写 __renderError，不自动回 loading）
 # 构建与安装（debug）
 hvigorw assembleHap --mode module -p product=default -p buildMode=debug --no-daemon
 hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap
-hdc shell aa start -a EntryAbility -b rg.fellow99.oc.OCDesktop
+hdc shell aa start -a EntryAbility -b org.fellow99.oc.OCDesktop
 
 # 取证
 hdc shell "hilog -x | grep oc-desktop"        # 阶段与错误

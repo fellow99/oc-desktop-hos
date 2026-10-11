@@ -137,7 +137,7 @@ ready → quitting（before-quit / will-quit）→ stopped
 ```bash
 hvigorw assembleHap --mode module -p product=default -p buildMode=debug --no-daemon
 hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap
-hdc shell aa start -a EntryAbility -b rg.fellow99.oc.OCDesktop
+hdc shell aa start -a EntryAbility -b org.fellow99.oc.OCDesktop
 
 hdc shell "hilog -x | grep oc-desktop"     # 阶段与失败取证
 hdc shell aa dump -a                       # 2in1 最小化 / 后台语义

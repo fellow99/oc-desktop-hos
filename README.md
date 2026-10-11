@@ -9,7 +9,7 @@ Electron-on-HarmonyOS 运行时承载 **opencode v2 的服务端**，渲染层�
 
 | 项 | 值 |
 |---|---|
-| 应用名 / bundleName | **OC Desktop** / `rg.fellow99.oc.OCDesktop` |
+| 应用名 / bundleName | **OC Desktop** / `org.fellow99.oc.OCDesktop` |
 | 目标设备 | `2in1` / `tablet`（不做 phone） |
 | 上游基线 | opencode **v2.0.26**（tag `v2.0.26` / 提交 `9b4ec5714d` / 分支 `Branch_v2.0.26`） |
 | 运行时 | Electron **37**（`v37.2.3-20260825.1` = Node **22.17.0** / Chromium 138 / ABI **v138**）；Electron 40（Node 24.11.1）为触发式备选 |
@@ -48,9 +48,9 @@ node scripts\build-opencode.mjs
 pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\build-debug.ps1
 
 # ④ 安装 + 启动（部署前建议先卸载，清掉 userData 里的旧产物与 marker）
-hdc uninstall rg.fellow99.oc.OCDesktop
+hdc uninstall org.fellow99.oc.OCDesktop
 hdc app install -r electron\build\default\outputs\default\electron-default-signed.hap
-hdc shell aa start -a EntryAbility -b rg.fellow99.oc.OCDesktop
+hdc shell aa start -a EntryAbility -b org.fellow99.oc.OCDesktop
 ```
 
 常用参数：

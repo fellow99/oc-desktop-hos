@@ -1,6 +1,6 @@
 {
   "app": {
-    "bundleName": "rg.fellow99.oc.OCDesktop",
+    "bundleName": "org.fellow99.oc.OCDesktop",
     "vendor": "fellow99",
     "versionCode": 1,
     "versionName": "0.1.0",

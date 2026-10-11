@@ -1,4 +1,4 @@
-# ACL 申请清单（OC Desktop / `rg.fellow99.oc.OCDesktop`）
+# ACL 申请清单（OC Desktop / `org.fellow99.oc.OCDesktop`）
 
 > **版本**：v1（首版落盘）｜ **日期**：2026-10-11 ｜ **适用工程**：`oc-desktop-hos`
 > **用途**：**申请操作手册**。列出本工程必须申请的**受限权限（ACL）**、**开放权限（免 ACL）**、**明确不申请**的项与理由，以及 AGC 提交与上架合规前置。
@@ -42,7 +42,7 @@
   1. `web_engine/src/main/module.json5` → `requestPermissions`；
   2. `web_engine/src/main/module.json5` → `definePermissions`（该模块以 `definePermissions` 对外定义能力）。
   另：`electron/src/main/module.json5` 承载本应用的开放权限声明（见 §4）。
-- **为什么必须为新包名重申请**：ACL 与 **bundleName + AGC 应用主体**绑定；本工程使用 `rg.fellow99.oc.OCDesktop`（不是 `com.huawei.ohos_electron`，也不是 dsh 的包名），因此 dsh 已获批的同类权限**不能转移**（⬜ 待工单确认口径）。
+- **为什么必须为新包名重申请**：ACL 与 **bundleName + AGC 应用主体**绑定；本工程使用 `org.fellow99.oc.OCDesktop`（不是 `com.huawei.ohos_electron`，也不是 dsh 的包名），因此 dsh 已获批的同类权限**不能转移**（⬜ 待工单确认口径）。
 - **申请填写口径（建议）**：
   - `申请原因`（≤256 字）：本应用为 Electron 桌面应用在鸿蒙 PC 上的移植，运行时引擎（V8）需要在运行期生成机器码，必须申请可写可执行内存权限；不用于热更新，不加载外部不可信代码。
   - `使用场景`：应用启动与日常使用过程中由运行时引擎自行编译脚本；用户不感知该过程。
@@ -154,7 +154,7 @@
 | `web_engine/src/main/module.json5` → `requestPermissions` | `kernel.ALLOW_WRITABLE_CODE_MEMORY` + `INTERNET` + `GET_NETWORK_INFO` + `READ_WRITE_DOCUMENTS_DIRECTORY` + `READ_WRITE_DOWNLOAD_DIRECTORY` + `FILE_ACCESS_PERSIST` | ⬜ 计划（骨架复制后落地） |
 | `web_engine/src/main/module.json5` → `definePermissions` | `kernel.ALLOW_WRITABLE_CODE_MEMORY` | ⬜ 计划 |
 | `electron/src/main/module.json5` → `requestPermissions` / `backgroundModes` | `KEEP_BACKGROUND_RUNNING` + `backgroundModes: ["taskKeeping"]` | ⬜ 计划 |
-| `AppScope/app.json5` | `bundleName = rg.fellow99.oc.OCDesktop`、`label = OC Desktop`、`versionCode` 递增策略 | ⬜ 计划 |
+| `AppScope/app.json5` | `bundleName = org.fellow99.oc.OCDesktop`、`label = OC Desktop`、`versionCode` 递增策略 | ⬜ 计划 |
 | 三处 `EntryAbility_label` | `electron/src/main/resources/{base,en_US,zh_CN}/element/string.json` 同步改名 | ⬜ 计划（改名漏一处即出现旧名） |
 
 > 现状说明：本工程骨架尚未复制（`docs/工程规划-V2.md` §3.1 的 Phase 0 P0-4），因此上表全部为**计划**项；**不得**把计划值写成已完成声明。

@@ -8,7 +8,7 @@
 
 定义并守护本应用的**身份**与**可分发资格**：
 
-- 应用显示名 **OC Desktop**、bundleName **`rg.fellow99.oc.OCDesktop`**，并保证改名时「三处同步」不漏；
+- 应用显示名 **OC Desktop**、bundleName **`org.fellow99.oc.OCDesktop`**，并保证改名时「三处同步」不漏；
 - 签名材料（`signing.debug.local.json` / `signing.release.local.json`）由 `hvigorfile.ts` 在 `afterNodeEvaluate` **仅内存注入**，不入库、不写回；
 - ACL 归属：本包名需单独申请受限权限，其中 `ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY` 是 Electron/V8 启用 JIT 的前提（决定 `007-runtime-host` 三候选的可行性边界）；
 - `versionCode` 规则与上架身份类合规项（图标、禁用词、调试开关）的构建期守卫。
@@ -158,7 +158,7 @@
 - 假设 🔶：应用市场审核对渲染组件（ArkWeb）、图标纯色、首启文案、AI 标识、命名禁用词有硬性要求（工程规划 §8.5 G1–G10）。
 - 约束：MUST NOT 使用共享签名；MUST NOT 申请 `READ_WRITE_DESKTOP_DIRECTORY` 等上架障碍权限；MUST NOT 以 `CUSTOM_SANDBOX` 替代进程沙箱。
 - 约束：`better_sqlite3.node` 属**随包原生库**（放在 `libs/arm64-v8a/`），与「执行自有 ELF」不同，MUST NOT 因此申请二进制证书。
-- ⬜ 待验证：`rg.fellow99.oc.OCDesktop` 是否与已注册的应用主体一致（影响签名、ACL 归属与备案三一致；工程规划 §12.1）。
+- ⬜ 待验证：`org.fellow99.oc.OCDesktop` 是否与已注册的应用主体一致（影响签名、ACL 归属与备案三一致；工程规划 §12.1）。
 - ⬜ 待验证：ACL 审批的前置条件与节奏（是否要求应用已创建/已提交，试用调试 Profile 的实际可用性）。
 - ⬜ 待验证：JIT 受限权限在目标 API 版本上的实际授予与拒绝行为（由 007 探针实测）。
 - ⬜ 待验证：release Profile 的 `type` 字段判定方式与重建时机。

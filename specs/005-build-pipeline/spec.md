@@ -108,7 +108,7 @@
 - FR-005-032 阶段④ MUST 在固定工具链下构建：设置 `NODE_HOME`（DevEco 自带 Node）与 `DEVECO_SDK_HOME`，清除 `NODE_OPTIONS`，使用 DevEco 自带 JBR（🔶 用其它 JDK 会报 `Invalid CEN header`）。
 - FR-005-033 阶段④ MUST 通过 `cmd /c` 调用 `.bat`/`.cmd`（`bun`、`hvigorw`）；MSYS/Git-Bash 环境下 MUST 设置 `MSYS_NO_PATHCONV=1`。
 - FR-005-034 阶段④ MUST 使用 `hvigorw assembleHap --mode module -p product=default -p buildMode=debug --no-daemon` 产出 debug HAP，release 档由 `-p buildMode=release` 与发布签名材料产出（签名细节见 006）。
-- FR-005-035 阶段④ MUST 提供安装启动命令序列：`hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap` → `hdc shell aa start -a EntryAbility -b rg.fellow99.oc.OCDesktop`；部署前清理旧产物时使用不带 `-r` 的 `hdc uninstall`。
+- FR-005-035 阶段④ MUST 提供安装启动命令序列：`hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap` → `hdc shell aa start -a EntryAbility -b org.fellow99.oc.OCDesktop`；部署前清理旧产物时使用不带 `-r` 的 `hdc uninstall`。
 - FR-005-036 阶段④ MUST 记录构建产物哈希（HAP 与其包含的 tar）与工具链版本，形成「可运行参照产物」基线（工程规划 P0-6）。
 
 ### 3.7 host 侧门禁：smoke-node22
