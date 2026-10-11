@@ -1,0 +1,13 @@
+{
+  "_说明": "RELEASE 签名材料样例：复制本文件为 signing.release.local.json 并填入真实值（gitignored，不入库）。",
+  "_用途": "发布包构建（SIGN_MODE=release）。AGC 申请的发布证书 + 发布 Profile：Profile 里必须已写入本应用获批的 ACL（尤其 JIT 权限）。",
+  "_前置": "1) 在 AGC 提交 ACL 申请（见 docs/ACL申请清单.md）；2) 创建发布 Profile（ACL 变化后必须重建 Profile）；3) 下载发布证书与 Profile。",
+  "_注意": "release 签名的包无法用 hdc 侧载（会报 not trusted app source），真机调试一律用 build-debug.ps1。",
+  "certpath": "<path to release .cer>",
+  "storeFile": "<path to release .p12>",
+  "profile": "<path to release .p7b>",
+  "keyAlias": "releaseKey",
+  "keyPassword": "<hvigor DecipherUtil AES-GCM ciphertext, >=32 hex chars>",
+  "storePassword": "<hvigor DecipherUtil AES-GCM ciphertext, >=32 hex chars>",
+  "signAlg": "SHA256withECDSA"
+}

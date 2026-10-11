@@ -1,0 +1,15 @@
+{
+  "_说明": "DEBUG 签名材料样例：复制本文件为 signing.debug.local.json 并填入真实值。signing.debug.local.json 已被 gitignore，不入库。",
+  "_用途": "本地 debug 构建 / 真机侧载（DevEco 自动生成的调试证书 + debugKey）。hvigorfile.ts 在 SIGN_MODE=debug 时读取本文件，仅内存注入 signingConfigs。",
+  "_路径": "certpath / storeFile / profile 可写相对工程根的路径或绝对路径；DevEco 默认在 ~/.ohos/config/ 下生成调试材料。",
+  "_密码": "keyPassword / storePassword 必须是 hvigor DecipherUtil 的 AES-GCM 密文（≥32 位 hex，非明文）；且 .p12 同级目录需有 material/{fd,ac,ce} 密钥链。",
+  "_获取": "DevEco Studio → File → Project Structure → Signing Configs → 勾选 Automatically generate signature，然后从生成的签名材料取这些值（务必为本工程 bundleName 重新生成，不能复用 com.huawei.ohos_electron 的签名）。",
+  "_侧载": "debug 签名的包才可以用 hdc app install -r 侧载；release 包会报 not trusted app source。",
+  "certpath": "<path to debug .cer>",
+  "storeFile": "<path to debug .p12>",
+  "profile": "<path to debug .p7b>",
+  "keyAlias": "debugKey",
+  "keyPassword": "<hvigor DecipherUtil AES-GCM ciphertext, >=32 hex chars>",
+  "storePassword": "<hvigor DecipherUtil AES-GCM ciphertext, >=32 hex chars>",
+  "signAlg": "SHA256withECDSA"
+}

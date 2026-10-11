@@ -1,0 +1,41 @@
+# ---- HarmonyOS / hvigor 生成物 ----
+/node_modules
+/oh_modules
+/local.properties
+/.idea
+**/build
+/.hvigor
+.cxx
+/.clangd
+/.clang-format
+/.clang-tidy
+**/.test
+/.appanalyzer
+# hvigor 为 HAR 模块生成的 BuildProfile.ets：落在模块根目录而非 build/ 下，内容随 buildMode 重写
+/web_engine/BuildProfile.ets
+
+# ---- 构建缓存 ----
+# 运行时发行版归档的解压缓存（collect-runtime.mjs）
+/.cache/
+# 构建日志与真机证据（截图/报告）
+/logs/
+
+# ---- 运行时时序产物（构建期从发行版归档与 SDK copy，不入库）----
+# Electron SO / 第三方原生模块（libelectron.so、libadapter.so、libffmpeg.so、libc++_shared.so、better_sqlite3.node）
+*.so
+*.node
+/electron/libs/
+# opencode Node 产物（dist-node 打包后的 tar.gz 与 marker，由 build-opencode/collect-opencode 生成）
+opencode-dist.tar.gz
+opencode-dist.version
+/dist-node/
+/.stage/
+
+# ---- 签名材料（含密钥/证书路径与密文口令，绝不入库）----
+signing.local.json
+signing.debug.local.json
+signing.release.local.json
+!signing.debug.local.json.sample
+!signing.release.local.json.sample
+# 本地签名材料目录（.p12/.cer/.p7b/.csr + material 解密密钥链）
+/.ohos/

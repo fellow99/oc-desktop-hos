@@ -1,0 +1,52 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "opencode 桌面端（HarmonyOS 版）"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "OC Desktop 主入口"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "OC Desktop"
+    },
+    {
+      "name": "BrowserAbility_desc",
+      "value": "description"
+    },
+    {
+      "name": "BrowserAbility_label",
+      "value": "BrowserAbility"
+    },
+    {
+      "name": "button_ok",
+      "value": "ok"
+    },
+    {
+      "name": "button_cancel",
+      "value": "cancel"
+    },
+    {
+      "name": "StatusBarEntryAbility_desc",
+      "value": "Application status bar"
+    },
+    {
+      "name": "StatusBarEntryAbility_label",
+      "value": "Application status bar"
+    },
+    {
+      "name": "StatelessAbility_desc",
+      "value": "description"
+    },
+    {
+      "name": "StatelessAbility_label",
+      "value": "OC Desktop"
+    },
+    {
+      "name": "OpenNewWindow_label",
+      "value": "Open New Window"
+    }
+  ]
+}

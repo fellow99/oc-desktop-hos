@@ -1,0 +1,52 @@
+{
+  "app": {
+    "signingConfigs": [],
+    "products": [
+      {
+        "name": "default",
+        "signingConfig": "default",
+        "compatibleSdkVersion": "5.0.5(17)",
+        "compatibleSdkVersionStage": "release",
+        "runtimeOS": "HarmonyOS",
+        "buildOption": {
+          "nativeLib": {
+            // Electron-on-鸿蒙 运行时的 SO 与第三方 .node（better_sqlite3.node）都落在 libs/arm64-v8a，
+            // 必须收集全部原生库，否则设备侧 dlopen 失败（工程规划 §3.6）。
+            "collectAllLibs": true
+          },
+          "strictMode": {
+            "caseSensitiveCheck": true,
+            "useNormalizedOHMUrl": true
+          }
+        },
+        "targetSdkVersion": "6.1.1(24)"
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug"
+      },
+      {
+        "name": "release"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "electron",
+      "srcPath": "./electron",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "web_engine",
+      "srcPath": "./web_engine"
+    }
+  ]
+}

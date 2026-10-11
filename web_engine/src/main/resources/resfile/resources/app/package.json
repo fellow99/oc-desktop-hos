@@ -1,0 +1,9 @@
+{
+  "name": "oc-desktop-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OC Desktop 的 Electron 主进程产物（resfile/resources/app 运行时目录）",
+  "main": "main.js",
+  "author": "fellow99",
+  "license": "MIT"
+}

@@ -1,0 +1,22 @@
+diff --git a/packages/cli/vite.node.config.ts b/packages/cli/vite.node.config.ts
+index 16a9c57c4d..c5609cb72c 100644
+--- a/packages/cli/vite.node.config.ts
++++ b/packages/cli/vite.node.config.ts
+@@ -114,7 +114,7 @@ const resolve = {
+       replacement: path.join(path.dirname(createRequire(import.meta.url).resolve("ws/package.json")), "wrapper.mjs"),
+     },
+   ],
+-  conditions: ["node"],
++  conditions: ["ohos", "node"],
+ }
+ 
+ const output = (entryFileNames: string, banner?: string) => ({
+@@ -285,7 +285,7 @@ export function mainConfig(input: NodeBuildInput): UserConfig {
+     ssr: { noExternal: true },
+     build: {
+       ssr: "src/node/index.ts",
+-      target: "node26",
++      target: process.env.OPENCODE_NODE_TARGET ?? "node26",
+       outDir: "dist-node",
+       emptyOutDir: false,
+       minify: true,

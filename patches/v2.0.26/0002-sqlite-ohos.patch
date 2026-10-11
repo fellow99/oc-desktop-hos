@@ -1,0 +1,275 @@
+diff --git a/packages/core/package.json b/packages/core/package.json
+index f3b7fb9738..4e0fb3e7db 100644
+--- a/packages/core/package.json
++++ b/packages/core/package.json
+@@ -32,6 +32,7 @@
+   "imports": {
+     "#sqlite": {
+       "workerd": "./src/database/sqlite.workerd.ts",
++      "ohos": "./src/database/sqlite.ohos.ts",
+       "bun": "./src/database/sqlite.bun.ts",
+       "node": "./src/database/sqlite.node.ts",
+       "default": "./src/database/sqlite.node.ts"
+diff --git a/packages/core/src/database/sqlite.ohos.ts b/packages/core/src/database/sqlite.ohos.ts
+new file mode 100644
+index 0000000000..e7245716a7
+--- /dev/null
++++ b/packages/core/src/database/sqlite.ohos.ts
+@@ -0,0 +1,257 @@
++/**
++ * HarmonyOS (`ohos`) variant of `#sqlite`.
++ *
++ * `packages/core/package.json` maps the `ohos` condition here and the CLI build puts `"ohos"` ahead
++ * of `"node"` in `resolve.conditions`, so an ohos build never reaches the upstream `node` variant.
++ *
++ * Why it exists: `sqlite.node.ts` opens `node:sqlite`'s `DatabaseSync`, but the HarmonyOS runtime
++ * ships a customized Node without the sqlite binding — there, even importing `node:sqlite` fails
++ * with `No such binding: sqlite`. This file therefore never references that module statically;
++ * both backends are pulled in with `require` at runtime. Only on a host (Electron 37 / Node 22.17,
++ * see `oc-desktop-hos/scripts/smoke-node22.mjs`) does `node:sqlite` exist at all.
++ *
++ * Backend loading is two-tier, tried in order:
++ *   1. `require(process.env.OPENCODE_BETTER_SQLITE3_PATH ?? "better-sqlite3")` — the device path.
++ *      The JS half of better-sqlite3 ships inside the materialized runtime tree next to the bundle
++ *      (so a bare specifier resolves), and the native half is deployed from `electron/libs/arm64-v8a/`
++ *      into `/data/storage/el1/bundle/libs/arm64/`: a `.node` extracted into the app data directory
++ *      cannot be dlopen'ed, so the environment variable carries its absolute path. It may point at
++ *      the module directory or straight at `better_sqlite3.node` (see docs/工程规划-V2.md §3.6).
++ *   2. `node:sqlite`'s `DatabaseSync` — host-side fallback only, reached when tier 1 throws. On a
++ *      device the binding is absent, so a tier 2 failure reports both backends and both reasons.
++ *
++ * better-sqlite3 is adapted onto the `node:sqlite` surface so the body below matches
++ * `sqlite.node.ts`:
++ *   new Database(filename, { readonly, timeout, fileMustExist })  ~  new DatabaseSync(filename, ...)
++ *   statement.safeIntegers(true)                                  ~  statement.setReadBigInts(true)
++ *   statement.raw(true)                                           ~  statement.setReturnArrays(true)
++ *   statement.all(...) / database.exec() / database.loadExtension() / database.pragma() / close()
++ */
++import { createRequire } from "node:module"
++import { Context, Effect, Layer } from "effect"
++import { Reactivity } from "effect/unstable/reactivity"
++import { SqlClient } from "effect/unstable/sql"
++import { classifySqliteError, SqlError } from "effect/unstable/sql/SqlError"
++import { Sqlite } from "./sqlite.js"
++
++const TypeId = "~@opencode/core/database/SqliteOhos" as const
++
++export const supportsTuningPragmas = true
++
++// Foreign keys default OFF and can be toggled per connection.
++export const supportsForeignKeyToggle = true
++
++interface Config extends Sqlite.ClientConfig {
++  readonly filename: string
++  readonly readonly?: boolean
++  readonly create?: boolean
++  readonly readwrite?: boolean
++  readonly disableWAL?: boolean
++  readonly timeout?: number
++  readonly allowExtension?: boolean
++}
++
++/** The statement surface both backends are normalized onto. */
++interface SyncStatement {
++  setReadBigInts(enabled: boolean): void
++  setReturnArrays(enabled: boolean): void
++  all(...params: unknown[]): Array<Record<string, unknown>>
++}
++
++/** The database surface both backends are normalized onto. */
++interface SyncDatabase {
++  prepare(query: string): SyncStatement
++  exec(sql: string): void
++  loadExtension(path: string): void
++  pragma(source: string): void
++  close(): void
++}
++
++interface BetterSqlite3Statement {
++  safeIntegers(enabled: boolean): unknown
++  raw(enabled: boolean): unknown
++  all(...params: unknown[]): Array<Record<string, unknown>>
++}
++
++interface BetterSqlite3Database {
++  prepare(query: string): BetterSqlite3Statement
++  exec(sql: string): void
++  loadExtension(path: string): void
++  pragma(source: string, options?: { simple?: boolean }): unknown
++  close(): void
++}
++
++type BetterSqlite3Constructor = new (
++  filename: string,
++  options?: { readonly?: boolean; timeout?: number; fileMustExist?: boolean },
++) => BetterSqlite3Database
++
++// Resolved against the bundle, so a bare specifier finds the `node_modules` shipped with it.
++const require = createRequire(import.meta.url)
++
++function openBetterSqlite3(specifier: string, config: Config): SyncDatabase {
++  const Database = require(specifier) as BetterSqlite3Constructor
++  const database = new Database(config.filename, {
++    readonly: config.readonly === true,
++    // `undefined` keeps better-sqlite3's own default (5000ms), which suits a device better than 0.
++    timeout: config.timeout,
++    // opencode's `create: false` means "do not create a missing database" -> `fileMustExist`.
++    fileMustExist: config.create === false,
++  })
++  // better-sqlite3 leaves foreign keys OFF, the upstream node variant enables them at open.
++  database.pragma("foreign_keys = ON")
++  return {
++    prepare: (query) => {
++      const statement = database.prepare(query)
++      return {
++        setReadBigInts: (enabled) => {
++          statement.safeIntegers(enabled)
++        },
++        setReturnArrays: (enabled) => {
++          // better-sqlite3 only implements the enabling direction.
++          if (enabled) statement.raw(true)
++        },
++        all: (...params) => statement.all(...params),
++      }
++    },
++    exec: (sql) => database.exec(sql),
++    loadExtension: (path) => database.loadExtension(path),
++    pragma: (source) => {
++      database.pragma(source)
++    },
++    close: () => database.close(),
++  }
++}
++
++function openNodeSqlite(config: Config): SyncDatabase {
++  const { DatabaseSync } = require("node:sqlite") as {
++    DatabaseSync: new (
++      filename: string,
++      options?: {
++        readOnly?: boolean
++        timeout?: number
++        allowExtension?: boolean
++        enableForeignKeyConstraints?: boolean
++        open?: boolean
++      },
++    ) => {
++      prepare(query: string): {
++        setReadBigInts(enabled: boolean): void
++        setReturnArrays(enabled: boolean): void
++        all(...params: unknown[]): Array<Record<string, unknown>>
++      }
++      exec(sql: string): void
++      loadExtension(path: string): void
++      close(): void
++    }
++  }
++  const database = new DatabaseSync(config.filename, {
++    readOnly: config.readonly,
++    timeout: config.timeout,
++    allowExtension: config.allowExtension,
++    enableForeignKeyConstraints: true,
++    open: true,
++  })
++  return {
++    prepare: (query) => database.prepare(query),
++    exec: (sql) => database.exec(sql),
++    loadExtension: (path) => database.loadExtension(path),
++    pragma: (source) => {
++      database.exec(`PRAGMA ${source}`)
++    },
++    close: () => database.close(),
++  }
++}
++
++function reason(error: unknown) {
++  return error instanceof Error ? error.message : String(error)
++}
++
++function open(config: Config): SyncDatabase {
++  const specifier = process.env.OPENCODE_BETTER_SQLITE3_PATH ?? "better-sqlite3"
++  try {
++    return openBetterSqlite3(specifier, config)
++  } catch (betterSqlite3) {
++    try {
++      return openNodeSqlite(config)
++    } catch (nodeSqlite) {
++      throw new Error(
++        `Failed to open SQLite database ${config.filename}: neither backend is available.\n` +
++          `  better-sqlite3 (${specifier}): ${reason(betterSqlite3)}\n` +
++          `  node:sqlite (DatabaseSync): ${reason(nodeSqlite)}\n` +
++          "On HarmonyOS the sqlite binding is missing entirely: ship the aarch64-ohos " +
++          "better_sqlite3.node from electron/libs/arm64-v8a/ and point OPENCODE_BETTER_SQLITE3_PATH " +
++          "at it (it cannot be dlopen'ed from the extracted resfile tree).",
++      )
++    }
++  }
++}
++
++const make = (options: Config) =>
++  Effect.gen(function* () {
++    const native = (yield* Sqlite.Native) as SyncDatabase
++
++    const run = (query: string, params: ReadonlyArray<unknown> = []) =>
++      Effect.withFiber<Array<Record<string, unknown>>, SqlError>((fiber) => {
++        const statement = native.prepare(query)
++        statement.setReadBigInts(Context.get(fiber.context, SqlClient.SafeIntegers))
++        try {
++          return Effect.succeed(statement.all(...params) as Array<Record<string, unknown>>)
++        } catch (cause) {
++          return Effect.fail(
++            new SqlError({
++              reason: classifySqliteError(cause, { message: "Failed to execute statement", operation: "execute" }),
++            }),
++          )
++        }
++      })
++
++    const runValues = (query: string, params: ReadonlyArray<unknown> = []) =>
++      Effect.withFiber<ReadonlyArray<ReadonlyArray<unknown>>, SqlError>((fiber) => {
++        const statement = native.prepare(query)
++        statement.setReadBigInts(Context.get(fiber.context, SqlClient.SafeIntegers))
++        statement.setReturnArrays(true)
++        try {
++          return Effect.succeed(statement.all(...params) as unknown as ReadonlyArray<ReadonlyArray<unknown>>)
++        } catch (cause) {
++          return Effect.fail(
++            new SqlError({
++              reason: classifySqliteError(cause, { message: "Failed to execute statement", operation: "execute" }),
++            }),
++          )
++        }
++      })
++
++    const connection = Sqlite.makeConnection(run, runValues, {
++      loadExtension: (path: string) =>
++        Effect.try({
++          try: () => native.loadExtension(path),
++          catch: (cause) =>
++            new SqlError({
++              reason: classifySqliteError(cause, { message: "Failed to load extension", operation: "loadExtension" }),
++            }),
++        }),
++    })
++
++    return yield* Sqlite.makeClient(options, connection, TypeId, (acquirer) => ({
++      loadExtension: (path: string) => Effect.flatMap(acquirer, (_) => _.loadExtension(path)),
++    }))
++  })
++
++const nativeLayer = (config: Config) =>
++  Layer.effect(
++    Sqlite.Native,
++    Effect.gen(function* () {
++      const native = open(config)
++      yield* Effect.addFinalizer(() => Effect.sync(() => native.close()))
++      if (config.disableWAL !== true && config.readonly !== true) native.pragma("journal_mode = WAL")
++      return native
++    }),
++  )
++
++const clientLayer = (config: Config) => Layer.effect(SqlClient.SqlClient, make(config))
++
++export const sqliteLayer = (config: Config) => {
++  const native = nativeLayer(config)
++  return Layer.merge(native, clientLayer(config).pipe(Layer.provide(native))).pipe(Layer.provide(Reactivity.layer))
++}
