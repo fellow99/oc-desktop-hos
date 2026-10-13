@@ -40,7 +40,7 @@
 | TC-16 首屏 UI | AC-08 | 应用域读 `location.href` + 首屏标记 | 命中 v2 UI 首屏 | ⬜ |
 | TC-17 服务端健康 | AC-09 | 应用域 `fetch('/api/info')` | 200 且 `version=2.0.26` | ⬜ |
 | TC-18 鉴权引导 | FR-ver-021 | 读 `<userData>/ocr-connection.json` | 含 `cookieName`/`port`/`passwordKind` | ⬜ |
-| TC-19 DeepSeek Key | AC-10 | UI 设置 `<REDACTED_API_KEY>…a17f` | 保存成功且可再次读取 | ⬜ |
+| TC-19 DeepSeek Key | AC-10 | UI 设置 DeepSeek API Key（**真实密钥人工输入，不入库**） | 保存成功且可再次读取 | ⬜ |
 | TC-20 工作区创建 | AC-11 | 沙箱内建测试目录并选为工作区 | 服务端以该目录为项目根 | ⬜ |
 | TC-21 一次真实对话 | AC-12 | 发送「介绍一下你自己」 | 取得模型回复（非报错、非空） | ⬜ |
 | TC-22 better-sqlite3 持久化 | FR-ver-021 | 重启应用后回读会话 | 会话仍在（未重建空库） | ⬜ |
