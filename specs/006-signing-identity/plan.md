@@ -62,7 +62,10 @@ appIdentity = {
   synced: true,
 }
 
-appVersion = { versionCode: 1, versionName: '2.0.26.x', publishedBaseline: 0 }
+// versionName = '2.0.26'（三段式，与需求「版本号设为 2.0.26」一致）；versionCode 取
+// major*10000 + minor*100 + patch = 20026（与兄弟工程 pi-desktop-hos 同一规则），且必须严格大于
+// 上一发布基线（原为 1）。落地见 specs/101-version-2.0.26/{spec,plan}.md。
+appVersion = { versionCode: 20026, versionName: '2.0.26', publishedBaseline: 1 }
 
 signingMaterial = { debugFile, releaseFile, alias, injectedAt, writeBack: false }
 
