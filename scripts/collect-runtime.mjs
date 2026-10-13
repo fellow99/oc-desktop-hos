@@ -404,6 +404,17 @@ function stage6Rewrites() {
     require_(isFile(p), `待改写文件缺失（外壳结构可能已变化）: ${rule.file}`);
     const original = readText(p);
     const hits = original.split(rule.from).length - 1;
+    // 幂等：命中 expectedHits ⇒ 正常改写；命中 0 ⇒ 说明上一次已经改过（本脚本要能重复执行，
+    // 例如「清理中间文件后重跑流水线」），此时**跳过而不是失败** —— 但必须确认目标形态已达成，
+    // 否则说明规则已失效（from 与 to 都不在文件里）。
+    if (hits === 0) {
+      require_(
+        rule.to === '' || original.includes(rule.to),
+        `${rule.file} 中既没有 "${rule.from}" 也没有 "${rule.to}"（命中 0 次）：规则已失效，必须重新评估。`,
+      );
+      log(6, `${rule.file}: ${rule.description}（已改写，跳过）`);
+      continue;
+    }
     require_(
       hits === rule.expectedHits,
       `${rule.file} 中 "${rule.from}" 命中 ${hits} 次，预期 ${rule.expectedHits} 次（${rule.description}）；上游外壳升级后必须重新评估。`,
