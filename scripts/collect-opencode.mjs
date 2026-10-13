@@ -16,7 +16,9 @@
  *   node scripts/collect-opencode.mjs                      使用默认产物目录
  *   node scripts/collect-opencode.mjs --product <dir>      指定 dist-node 目录
  *   node scripts/collect-opencode.mjs --no-app-copy        只产出归档，不投放进 resfile
+ *   node scripts/collect-opencode.mjs --assets <dir>        指定品牌物料目录（默认父工程 ../assets）
  */
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -43,6 +45,7 @@ import {
   sha256File,
   warn,
 } from './lib/util.mjs';
+import { BRAND_NAME, DEFAULT_MATERIAL_DIR, requireBranded, transformArchive } from './lib/branding.mjs';
 
 const PROJECT_ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const WORKSPACE_ROOT = resolve(PROJECT_ROOT, '..');
@@ -85,28 +88,53 @@ function main() {
   copyTree(PRODUCT_DIR, STAGE_DIR);
   log('collect-opencode', `已暂存产物 → ${rel(PROJECT_ROOT, STAGE_DIR)}`);
 
-  // 2) better-sqlite3（JS + aarch64/.node）
+  // 2) Web UI 品牌化（OpenCode → OC Desktop）：只改**本工程交付产物**，因此不需要上游补丁
+  brandAppArchive(join(STAGE_DIR, 'assets', 'app-archive.bin'));
+
+  // 3) better-sqlite3（JS + aarch64/.node）
   stageBetterSqlite3();
 
-  // 3) 剪裁非 arm64 原生件
+  // 4) 剪裁非 arm64 原生件
   pruneNative();
 
-  // 4) 打包：以 dist-node/ 为顶层前缀（运行时解压时剥离）
+  // 5) 打包：以 dist-node/ 为顶层前缀（运行时解压时剥离）
   removeTree(ARCHIVE);
   runOrFail('tar', ['-czf', ARCHIVE, '--format=ustar', '-C', OUT_DIR, 'dist-node']);
   const marker = sha256File(ARCHIVE);
   log('collect-opencode', `归档完成 ${rel(PROJECT_ROOT, ARCHIVE)}（${(fileSize(ARCHIVE) / 1024 / 1024).toFixed(1)} MB, sha256=${marker.slice(0, 16)}…）`);
 
-  // 5) 校验归档内容（fail-visible）
+  // 6) 校验归档内容（fail-visible）
   verifyArchive();
 
-  // 6) 投放进 resfile
+  // 7) 投放进 resfile
   if (!NO_APP_COPY) {
     mkdirp(APP_RESFILE_DIR);
     copyOne(ARCHIVE, join(APP_RESFILE_DIR, 'opencode-dist.tar.gz'));
     log('collect-opencode', `已投放 → ${rel(PROJECT_ROOT, join(APP_RESFILE_DIR, 'opencode-dist.tar.gz'))}`);
   }
   console.log(`[oc-desktop] 完成：opencode 产物就绪（marker=sha256:${marker.slice(0, 12)}…）`);
+}
+
+/**
+ * 品牌化内嵌 Web UI 归档（原地重写 app-archive.bin）。
+ * 物料缺失/不可解析、保护清单被改写、品牌引用点漂移 → 一律硬失败（FR-brand-010 / R2）。
+ */
+function brandAppArchive(archivePath) {
+  require_(isFile(archivePath), `内嵌 UI 归档缺失: ${archivePath}`);
+  const materialDir = resolve(args.get('assets', DEFAULT_MATERIAL_DIR));
+  const before = readFileSync(archivePath);
+  const { bytes, stats } = transformArchive(before, { materialDir, label: rel(PROJECT_ROOT, archivePath) });
+  writeFileSync(archivePath, bytes);
+  log(
+    'collect-opencode',
+    `Web UI 品牌化 → ${BRAND_NAME}：条目 ${stats.entries} 不变，文本资产 ${stats.textAssets}，` +
+      `品牌替换 ${stats.brandReplacements} 处，图标 ${stats.iconAssets.length} 个，内联 Logo ${stats.logoAssets.length} 处；` +
+      `${(before.length / 1024 / 1024).toFixed(2)} → ${(bytes.length / 1024 / 1024).toFixed(2)} MB`,
+  );
+  const report = requireBranded(bytes, { materialDir, label: rel(PROJECT_ROOT, archivePath), scope: 'collect-opencode' });
+  const failed = report.checks.filter((check) => !check.ok);
+  require_(report.ok, `Web UI 品牌化断言失败 ${failed.length} 项: ${failed.map((check) => check.name).join(' / ')}`);
+  log('collect-opencode', `品牌化断言全绿（${report.checks.length} 项）`);
 }
 
 function stageBetterSqlite3() {
