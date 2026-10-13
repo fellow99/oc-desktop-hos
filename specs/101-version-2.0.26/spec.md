@@ -4,7 +4,7 @@
 > **需求编号:** 101-version-2.0.26 ｜ **需求名称:** 版本更新：2.0.26
 > **git 分支:** 不改动（不新建、不切换、不重命名；沿用 `main`，与 `./opencode` 的 `Branch_v2.0.26` 无关）
 > **涉及工程:** `oc-desktop-hos`（父工程 `D:\opencode-workspace\`）
-> **上游基线:** opencode **v2.0.26**（tag `v2.0.26` / 提交 `9b4ec5714d` / `Branch_v2.0.26`）；pi **v2.0.26**（需求原文基线，落地状态见 §3.1）
+> **上游基线:** opencode **v2.0.26**（tag `v2.0.26` / 提交 `9b4ec5714d` / `Branch_v2.0.26`）
 > **运行期:** Electron 37（`v37.2.3-20260825.1` = Node **22.17.0** / Chromium 138 / ABI **v138**）
 > **物料来源:** **父工程** `../assets/`（本机 `D:\opencode-workspace\assets\`）
 
@@ -42,33 +42,25 @@ opencode `v2.0.26` 并发布 `versionName = 2.0.26`，清理历史中间产物�
 
 ## 3. 上游事实（本规格前提）
 
-### 3.1 需求声明的基线（原文）与落地状态
+### 3.1 需求声明的上游基线
 
-需求原文写的是**两条**基线：`opencode 当前版本（tag=v2.0.26）`、`pi 当前版本（tag=v2.0.26）`。
-两者都是 **v2.0.26**。逐条核实落地状态：
+需求原文（`oc-desktop-hos` 子工程）声明**一条**上游基线：**opencode 当前版本（tag=v2.0.26）**。
+落地状态已核实：
 
-| 基线 | 需求声明 | 本工程实际构建输入 | 说明 |
-|---|---|---|---|
-| **opencode** | tag `v2.0.26` | ✅ **就是它** —— `../opencode` HEAD = `9b4ec5714d`（`release: v2.0.26`），`Branch_v2.0.26`，`git describe --tags` = `v2.0.26` | `build-opencode.mjs` 阶段 0 会前置校验 `EXPECTED_BASELINE=9b4ec5714d`，基线漂移即硬失败 |
-| **pi** | tag `v2.0.26` | ⚠️ **本工程不使用 pi 的产物** | 见下方说明 |
+| 项 | 值 |
+|---|---|
+| 需求声明 | opencode `tag=v2.0.26` |
+| 本工程实际构建输入 | ✅ **就是它** —— `../opencode` HEAD = `9b4ec5714d`（`release: v2.0.26`），分支 `Branch_v2.0.26`，`git describe --tags` = `v2.0.26` |
+| 构建期守卫 | ✅ `scripts/build-opencode.mjs` 阶段 0 前置校验 `EXPECTED_BASELINE=9b4ec5714d` 与 `"version": "2.0.26"`；基线漂移即**硬失败** |
+| 其余构建输入 | `../harmonypc-electron-versions/v37.2.3-20260825.1-release.zip`（Electron 37 运行时）、`../assets/`（品牌物料） |
 
-**关于 pi 基线（如实登记，不作为阻塞）**：
+> **参考实现（非基线）**：本轮的三个子规格（101 版本更新 / 102 鸿蒙 JS 工具 / 103 品牌化）
+> 在方法上参考了同型工程 `pi-desktop-hos` 的 `specs/101-version-0.11.1`、`specs/102-harmony-js-tools`、
+> `specs/103-branding`，以及 `dsh-desktop-hos` 的 `plugins/`（需求第三条明确指定参考其 `plugins/README.md`）。
+> 这些是**参考**，不是构建输入：`oc-desktop-hos` 的运行期服务端是 opencode v2
+> （`opencode.mjs` + 内嵌 v2 Web UI），构建链不依赖 `pi`。
 
-1. `oc-desktop-hos` 的运行期服务端是 **opencode v2**（`opencode.mjs` + 内嵌 v2 Web UI），
-   **不包含也不加载** pi 的任何产物；`pi` 不是本工程的构建输入（构建链只依赖
-   `../opencode`、`../harmonypc-electron-versions`、`../assets`）。
-2. `pi` 在本工作区（`D:\opencode-workspace\`）**没有 submodule**；`.gitmodules` 只有
-   `opencode` / `oc-desktop-hos` / `oc-desktop-website` / `harmonypc-electron`。
-3. 供参考：兄弟工作区 `D:\pi-workspace\pi` 的当前 checkout 是 `Branch_v1.1.0` / tag `v1.1.0`，
-   其远端最新 tag 为 `v1.2.0`（实测 `git ls-remote --tags origin`）。
-   ⬜ **待确认**：需求里的 `pi tag=v2.0.26` 指哪个仓库/远端（本机不可得）。
-4. 因此本规格把 pi 基线按「**需求声明**」记录，并把 `pi-desktop-hos` 作为**参考实现**
-   （其 `specs/101/102/103` 与本需求的三部分一一对应），而不是把 pi 当作构建输入。
-
-> 若需求的本意是「同时基于 pi 的某次发布」，请给出该仓库地址/tag 来源 —— 那会改变构建输入集，
-> 需要重新评估（本工程当前设计里没有 pi 的位置）。
-
-### 3.2 上游事实
+### 3.2 上游事实（本规格前提）
 
 | # | 事实 | 出处 |
 |---|---|---|

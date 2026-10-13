@@ -12,7 +12,7 @@ Electron-on-HarmonyOS 运行时承载 **opencode v2 的服务端**，渲染层�
 | 应用名 / bundleName | **OC Desktop** / `org.fellow99.oc.OCDesktop` |
 | 版本 | **`2.0.26`** / `versionCode` **20026**（规则 `major*10000 + minor*100 + patch`；版本规格见 `specs/101-version-2.0.26/`） |
 | 目标设备 | `2in1` / `tablet`（不做 phone） |
-| 上游基线 | opencode **v2.0.26**（tag `v2.0.26` / 提交 `9b4ec5714d` / 分支 `Branch_v2.0.26`）；pi **v2.0.26**（需求原文第二条基线，见 `specs/101-version-2.0.26/spec.md` §3.1） |
+| 上游基线 | opencode **v2.0.26**（tag `v2.0.26` / 提交 `9b4ec5714d` / 分支 `Branch_v2.0.26`） |
 | 运行时 | Electron **37**（`v37.2.3-20260825.1` = Node **22.17.0** / Chromium 138 / ABI **v138**）；Electron 40（Node 24.11.1）为触发式备选 |
 | 工程规划 | [`docs/工程规划-V2.md`](docs/工程规划-V2.md)（**唯一设计依据**；V1 为历史基线） |
 | 骨架镜像源 | `dsh-desktop-hos`（只镜框架，不搬业务） |
