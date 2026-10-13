@@ -79,9 +79,15 @@
 
 ### 4.2 Logo 与图标物料
 
-- **FR-brand-007**（MUST）：页面内联 Logo（`opencode-logo` 组件位置）**必须**使用父工程物料
-  （`assets/logo.svg` 优先）。判据：产物中该 SVG 的 path 数据与物料一致（或等价地：产物中不再出现上游
-  16×16 方框 path 数据）。
+- **FR-brand-007**（MUST）：页面 Logo 的**两个引用点**都必须使用父工程物料（`assets/logo.svg` 优先），
+  任一缺失即**构建失败**（不得静默留下上游图形）：
+  - **§7.1 内联 Logo**：16×16 的 `opencode-logo` 组件位置（models / settings 两处）。
+    判据：产物中该处不再出现上游 16×16 方框 path 数据，且出现物料 path 数据；
+  - **§7.2 连接页矢量字标**：服务端配对/连接页的 `server-connect-brand`（原 `viewBox "0 0 720 129"`）。
+    判据：产物中该处不再出现上游字标 path（特征串 `M55.3846 36.4286H18.4615V91.7143H55.3846V36.4286Z…`），
+    且出现物料 path 数据。保留原 viewBox：上游 CSS 只给该槽位 `width:160px`，把 viewBox 换成正方形会把它
+    从约 29px 顶到 160px，破坏首屏布局；物料按等比缩放居中放入（`translate((720-129)/2, 0) scale(129/1024)`）。
+    替换边界取**模板字面量的结束反引号**而非 `</svg>` —— 上游压缩器省略了该片段的结束标签。
 - **FR-brand-008**（MUST）：包内**每一个被引用的图标位**必须来自同一物料：`AppScope/.../app_icon.png`、
   `icon.png`、`startIcon.png`、`window_icon.png`、`product_logo_32.png`，以及 electron 模块实际投放的
   `$media:app_icon` / `$media:startIcon`。

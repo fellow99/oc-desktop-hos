@@ -69,7 +69,6 @@ opencode `v2.0.26` 并发布 `versionName = 2.0.26`，清理历史中间产物�
   （规则 `major*10000 + minor*100 + patch`）。
 - **FR-ver-004**（MUST）：版本号必须同步到 `README.md` 与 `docs/` 的相关文档；文档内不得残留 `0.1.0` 作为
   「当前版本」的表述（历史变更记录中的引用除外，须可解释）。
-
 ### 4.2 补丁集
 
 - **FR-ver-005**（MUST）：`patches/v2.0.26/` 中每条补丁必须同时满足
@@ -124,7 +123,7 @@ opencode `v2.0.26` 并发布 `versionName = 2.0.26`，清理历史中间产物�
 | AC-06 | host 侧 Node 22.17 冒烟 8 项全绿（版本/CLI/服务端/健康检查/内嵌 UI/事件面/数据库/产物清单） | `node scripts/smoke-node22.mjs` |
 | AC-07 | 产出 debug 签名 HAP，`hap-sign-tool verify-app` 通过 | 命令输出 |
 | AC-08 | 真机安装启动后进入就绪；`hilog` 出现统一 `[oc-desktop]` 前缀的阶段日志直至「界面已加载」 | `hdc shell hilog` 摘录 |
-| AC-09 | `/api/info` 返回 200 且版本为 `2.0.26` | 应用域 `fetch` 或 host 侧 `curl` |
+| AC-09 | `/api/info` 返回 200，且 `version` 字段是**上游从基线算出的开发版字符串**（实测 `0.0.0-Branch_v2.0.26-<YYYYMMDDHHmm>`），**不是** `2.0.26`；应用侧版本号以 HAP 的 `versionName`/`versionCode` 为准 | 应用域 `fetch` 或 host 侧 `curl` + 读 `pack.info` |
 | AC-10 | DeepSeek API Key 设置成功并出现在凭据存储中 | 应用域 UI 操作 + 凭据文件/接口取证 |
 | AC-11 | 工作区创建成功，服务端以该目录为项目根 | `GET /api/location` 或等价接口 + 目录存在 |
 | AC-12 | 一次真实对话取得模型回复（非报错、非空） | 会话消息记录摘录 |

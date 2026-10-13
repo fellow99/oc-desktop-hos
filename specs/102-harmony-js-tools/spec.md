@@ -68,8 +68,10 @@ G4/G10 通过「降级 + 构建期物化」处置；其余明确不做并在 §7
 ### 5.1 插件形态与契约
 
 - **FR-tool-001**（MUST）：插件必须是 **ESM**，默认导出 `{ id, setup }`；`id` 全局唯一。
-- **FR-tool-002**（MUST）：插件目录名必须符合本工程约定 `oc-plugin-<name>`（kebab-case），且不得含
-  `Harmony` / `DeepSeek` 等上架禁用词。
+- **FR-tool-002**（MUST）：插件目录名必须符合本工程约定 `oc-plugin-<name>`（kebab-case）。
+  **不得把上架禁用词放进用户可见文案**（工具的 `name` / `description` 会显示在界面上，须由构建期断言拦截）；
+  **内部标识符不受此限** —— 目录名、插件 `id`、规格路径中的 `harmony` 都不是用户可见面，
+  且与兄弟工程（`dsh-desktop-hos` 的 `harmony-plugin-XXX`、`pi-desktop-hos` 的 `extensions/`）保持一致。
 - **FR-tool-003**（MUST NOT）：插件**不得**使用 `node-pty` / `forkpty` / `openpty`；
   **不得** spawn 外部 ELF（`rg`、`git`、`node`、`python3` 等）；**不得**加载任何 `.node`/`.so`。
 - **FR-tool-004**（MUST）：插件必须 `export default` 一个 `setup(context)`，并在其中通过
