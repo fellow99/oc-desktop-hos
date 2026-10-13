@@ -122,7 +122,7 @@ specs/
 规则：
 
 1. **只写占位符**：`<DEEPSEEK_API_KEY>`、`sk-<REDACTED>`、`<TOKEN>` 等；连**前缀/后缀片段**
-   （如 `<REDACTED_API_KEY>…a17f`）也不要写 —— 片段同样能缩小暴力空间，且会被扫描器命中。
+   （如「前 6 位 + 后 4 位」这种形式）也不要写 —— 片段同样能缩小暴力空间，且会被扫描器命中。
 2. **真实值由人工在应用内输入**，或放在 gitignored 的本地文件（如 `signing.*.local.json` 的做法），
    由脚本读取，**绝不入库**。
 3. **提交前自检**：`git diff --cached` 里出现 `sk-`、`ghp_`、`AKIA`、`BEGIN ... PRIVATE KEY`、
