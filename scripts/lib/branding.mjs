@@ -62,6 +62,9 @@ export const TECHNICAL_MARKERS = [
   '@opencode/',
 ];
 
+/** 上游连接页矢量字标（viewBox `0 0 720 129`）的特征 path —— 品牌化后必须消失 */
+const UPSTREAM_WORDMARK_PATH = 'M55.3846 36.4286H18.4615V91.7143H55.3846V36.4286ZM73.8462 110.143H0V18H73.8462V110.143Z';
+
 /** 上游内联 Logo（`data-component=opencode-logo`）的特征 path —— 品牌化后必须消失 */
 export const UPSTREAM_INLINE_LOGO_PATH = 'M11.1999 12.8H4.79993V6.40002H11.1999V12.8Z';
 
@@ -516,6 +519,14 @@ export function brandText(text) {
   // HTML 压缩器会去掉属性值引号（如 aria-label=OpenCode）；品牌名含空格，补回引号
   // 否则会被解析成两个属性。其后的全局替换不会再碰到它。
   masked = masked.replace(/=OpenCode(?=[>\s])/g, `="${BRAND_NAME}"`);
+  // 标识符守卫（见上方注释）：保护清单已掩码，所以这里看到的都是将被替换的位置
+  const identifierLike = new RegExp(`${UPSTREAM_BRAND}[A-Z0-9_$]`, "g");
+  const risky = masked.match(identifierLike);
+  require_(
+    !risky,
+    `品牌替换会破坏代码标识符（${(risky ?? []).slice(0, 5).join(", ")}）。` +
+      `处置：把该标识符加入 PROTECTED_SUBSTRINGS，或改进 brandText 判定；不要盲目替换。`,
+  );
   const replaced = countOccurrences(masked, UPSTREAM_BRAND);
   let out = masked.split(UPSTREAM_BRAND).join(BRAND_NAME);
   for (const [sentinel, token] of restorations) out = out.split(sentinel).join(token);
@@ -532,7 +543,11 @@ export function brandInlineLogo(text, svgPaths) {
   const at = text.indexOf(anchor);
   if (at === -1) return { text, replaced: false };
   const end = text.indexOf('`', at);
-  const fragment = end === -1 ? text.slice(at) : text.slice(at, end);
+  require_(
+    end !== -1,
+    '内联 Logo 不在模板字面量内（上游 UI 结构已变）：拒绝替换，避免截断整个 bundle',
+  );
+  const fragment = text.slice(at, end);
   require_(
     fragment.includes('fill=currentColor') && fragment.includes('<path'),
     `内联 Logo 形态与预期不符（上游 UI 结构已变），拒绝盲目替换: ${JSON.stringify(fragment.slice(0, 120))}`,
@@ -541,7 +556,7 @@ export function brandInlineLogo(text, svgPaths) {
   const replacement =
     `data-component=opencode-logo aria-hidden=true viewBox=\\"0 0 1024 1024\\"fill=none ` +
     `xmlns=http://www.w3.org/2000/svg>${paths}</svg>`;
-  return { text: `${text.slice(0, at)}${replacement}${end === -1 ? '' : text.slice(end)}`, replaced: true };
+  return { text: `${text.slice(0, at)}${replacement}${text.slice(end)}`, replaced: true };
 }
 
 // ==================================================================== 归档
@@ -586,6 +601,54 @@ function compressEntry(body) {
  * 归档变换：文本资产品牌化 + 内联 Logo 替换 + 二进制 UI 图标整文件替换，然后按上游格式重编码。
  * 统计与断言信息用于可复核（spec.md §5 AC-01/02/03/05/07、R2/R3）。
  */
+/**
+ * 用父工程 logo.svg 的 1024×1024 坐标，换算出「居中放进 720×129 字标槽位」的变换。
+ *
+ * 为什么单独处理：上游有**两个**品牌图形引用点 —— 16×16 的 opencode-logo 组件（见 brandInlineLogo），
+ * 以及服务端配对/连接页的矢量**字标**（viewBox 0 0 720 129，由 .server-connect-brand 承载）。
+ * 只替换前者会在这页留下上游字标。
+ *
+ * 替换边界取「本模板字面量的结束反引号」而不是 `</svg>`：上游构建产物里的该片段**没有** `</svg>`
+ *（压缩器省掉了可选结束标签），按 `</svg>` 找结束位置必然失败。安全前提是该片段内**不含**
+ * `${…}` 插值（有插值就说明它带动态绑定，拒绝整体替换）。
+ *
+ * 保留原 viewBox：上游 CSS 只给该槽位 width:160px，换成正方形 viewBox 会把它从约 29px 顶到 160px。
+ * 引号说明：该片段位于模板字面量内，属性引号是普通双引号（无转义）。
+ */
+export function brandWordmark(text, svgPaths) {
+  const quote = String.fromCharCode(34);
+  const backtick = String.fromCharCode(96);
+  const anchor = 'viewBox=' + quote + '0 0 720 129' + quote;
+  const marker = text.indexOf(anchor);
+  if (marker === -1) return { text, replaced: false };
+  const start = text.lastIndexOf('<svg', marker);
+  require_(start !== -1, '字标 SVG 起始标签缺失（上游 UI 结构已变），拒绝盲目替换');
+  const close = text.indexOf(backtick, marker);
+  require_(close !== -1, '字标 SVG 片段缺少模板字面量结束反引号（上游 UI 结构已变），拒绝盲目替换');
+  const region = text.slice(start, close);
+  require_(
+    !region.includes('${'),
+    '字标片段含模板插值（上游 UI 结构已变）：整体替换会丢掉动态绑定，拒绝替换',
+  );
+  // 等比缩放 129 / 1024；水平居中 (720 - 129) / 2
+  const scale = 129 / 1024;
+  const translateX = (720 - 129) / 2;
+  const attribute = (name, value) => name + '=' + quote + value + quote;
+  const paths = svgPaths
+    .map((path) => '<path ' + attribute('d', path.d) + attribute('fill', path.fill) + '></path>')
+    .join('');
+  const replacement =
+    '<svg xmlns=http://www.w3.org/2000/svg ' +
+    attribute('viewBox', '0 0 720 129') +
+    'fill=none>' +
+    '<g ' +
+    attribute('transform', 'translate(' + translateX.toFixed(4) + ' 0) scale(' + scale.toFixed(6) + ')') +
+    '>' +
+    paths +
+    '</g></svg>';
+  return { text: text.slice(0, start) + replacement + text.slice(close), replaced: true };
+}
+
 export function transformArchive(bytes, options = {}) {
   const material = options.material ?? loadMaterial(options.materialDir);
   const icons = options.icons ?? buildWebIcons(material);
@@ -598,6 +661,7 @@ export function transformArchive(bytes, options = {}) {
     brandReplacements: 0,
     iconAssets: [],
     logoAssets: [],
+    wordmarkAssets: [],
     titleBefore: null,
     titleAfter: null,
     protectedBefore: {},
@@ -635,8 +699,11 @@ export function transformArchive(bytes, options = {}) {
     const brandedText = brandText(text);
     stats.brandReplacements += brandedText.replaced;
     const logo = brandInlineLogo(brandedText.text, material.svgPaths);
-    const next = logo.replaced ? logo.text : brandedText.text;
+    const withLogo = logo.replaced ? logo.text : brandedText.text;
     if (logo.replaced) stats.logoAssets.push(key);
+    const wordmark = brandWordmark(withLogo, material.svgPaths);
+    if (wordmark.replaced) stats.wordmarkAssets.push(key);
+    const next = wordmark.replaced ? wordmark.text : withLogo;
     if (key === 'index.html') stats.titleAfter = /<title>([^<]*)<\/title>/.exec(next)?.[1] ?? null;
     addCounts(stats.protectedAfter, next, PROTECTED_SUBSTRINGS);
     addCounts(stats.technicalAfter, next, TECHNICAL_MARKERS);
@@ -646,6 +713,11 @@ export function transformArchive(bytes, options = {}) {
   }
   require_(pendingIcons.size === 0, `归档缺少必需的图标资产位（上游 UI 结构已变，品牌化会静默失效）: ${[...pendingIcons].join(', ')}`);
   require_(stats.logoAssets.length > 0, `归档中未找到内联 Logo 资产（data-component=opencode-logo）——品牌引用点漂移，构建必须失败`);
+  require_(
+    stats.wordmarkAssets.length > 0,
+    `归档中未找到连接页矢量字标（viewBox 0 0 720 129）——品牌引用点漂移，构建必须失败。` +
+      `若上游确实移除了该字标，请同步更新 assertArchiveBranded 与 specs/103-branding/spec.md`,
+  );
   const branded = encodeArchive(entries.map(([key, raw]) => [key, compressEntry(raw)]));
   stats.entriesAfter = Object.keys(decodeArchive(branded, '<branded>').index).length;
   require_(stats.entriesAfter === stats.entries, `品牌化改变了归档条目数（${stats.entries} → ${stats.entriesAfter}）`);
@@ -764,6 +836,16 @@ export function assertArchiveBranded(bytes, options = {}) {
   add('内联 Logo 组件位置存在', logoAssets.length > 0, logoAssets.join(', '));
   add('内联 Logo 命中父工程 logo.svg 的 path 数据', material.svgPaths.some((path) => logoText.includes(path.d)), `探针: ${material.svgPaths[0]?.d.slice(0, 24)}…`);
   add('上游 16×16 方框 path 已消失', !logoText.includes(UPSTREAM_INLINE_LOGO_PATH), UPSTREAM_INLINE_LOGO_PATH);
+  // 连接页矢量字标：必须同样来自物料，且上游字标几何必须消失（specs/103-branding FR-brand-007）
+  const wordmarkAssets = keys.filter((key) => (rawOf[key]?.toString('utf8') ?? '').includes('server-connect-brand'));
+  const wordmarkText = wordmarkAssets.map((key) => rawOf[key].toString('utf8')).join(String.fromCharCode(10));
+  add('连接页字标资产存在（server-connect-brand）', wordmarkAssets.length > 0, `${wordmarkAssets.length} 个资产`);
+  add(
+    '连接页字标命中父工程 logo.svg 的 path 数据',
+    material.svgPaths.some((path) => wordmarkText.includes(path.d)),
+    `探针: ${material.svgPaths[0]?.d.slice(0, 24)}…`,
+  );
+  add('上游 720×129 字标几何已消失', !wordmarkText.includes(UPSTREAM_WORDMARK_PATH), UPSTREAM_WORDMARK_PATH.slice(0, 48));
 
   // AC-05/AC-07 归档内图标与物料生成物逐字节一致
   for (const [key, iconName] of Object.entries(ARCHIVE_ICON_ASSETS)) {
