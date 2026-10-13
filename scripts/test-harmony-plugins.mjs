@@ -21,10 +21,13 @@ import {
   MAX_DEPTH,
   MAX_FILES,
   MAX_FILE_BYTES,
+  MAX_LIMIT,
   MAX_LINE_CHARS,
+  MAX_MATCH_CHARS,
   MAX_RESULTS,
   SKIP_DIRS,
   findTree,
+  globSource,
   readTextFile,
   searchTree,
   walk,
@@ -89,6 +92,8 @@ function buildFixture() {
   writeText(path.join(MAIN_ROOT, "oh_modules", "skip.txt"), "hello oh\n")
   writeText(path.join(MAIN_ROOT, "big.txt"), `${"x".repeat(MAX_FILE_BYTES + 1000)}\nhello big\n`)
   fs.writeFileSync(path.join(MAIN_ROOT, "bin.dat"), Buffer.concat([Buffer.from("hello\0binary"), Buffer.alloc(64, 1)]))
+  // 行切分回归夹具：内容**以换行结尾**（rg 不会为结尾的 \n 报一条空行匹配）
+  writeText(path.join(MAIN_ROOT, "trailing.txt"), "only line\n")
 
   // 深度上限：depth/n1..n6/shallow.txt 是 depth 8（可见），depth/n1..n7/deep.txt 是 depth 9（不可见）
   const chain = ["depth", "n1", "n2", "n3", "n4", "n5", "n6", "n7"].reduce((current, name) => path.join(current, name), MAIN_ROOT)
@@ -179,6 +184,16 @@ function testGrep() {
   check("JT-22 深度 8 的条目可见", pathsOf(deep.matches).includes("depth/n1/n2/n3/n4/n5/n6/shallow.txt"), JSON.stringify(pathsOf(deep.matches)))
   check("JT-22 超深条目不可见", !pathsOf(deep.matches).some((value) => value.endsWith("deep.txt")), JSON.stringify(pathsOf(deep.matches)))
   check("JT-22 深度截断显式标注", deep.truncated.depth === true, JSON.stringify(deep.truncated))
+
+  // code-review 修复的回归用例（Critical/Important 项）
+  const clamped = grepArguments({ pattern: "x", limit: 1000000 })
+  check("CR-1 limit 被硬上限钳制", clamped.value.limit === MAX_LIMIT, String(clamped.value.limit))
+  check("CR-1 钳制事实被显式带出", clamped.value.limitClamped === true, String(clamped.value.limitClamped))
+  check("CR-1 未超上限时不标钳制", grepArguments({ pattern: "x", limit: 5 }).value.limitClamped === false)
+  const clampedGlob = globArguments({ pattern: "**/*", limit: 999999 })
+  check("CR-1 glob 的 limit 同样被钳制", clampedGlob.value.limit === MAX_LIMIT && clampedGlob.value.limitClamped === true)
+  const cappedTree = searchTree({ root: MAIN_ROOT, pattern: "hello", limit: 1000000 })
+  check("CR-1 searchTree 忽略超上限入参并停在 MAX_LIMIT 内", cappedTree.matches.length <= MAX_LIMIT, String(cappedTree.matches.length))
 }
 
 /** ------------------------------------------------ glob 语义 JT-15 与跳过/上限 */
@@ -190,7 +205,7 @@ function testGlob() {
   check(
     "glob 无斜杠模式按基名匹配（任意层级）",
     JSON.stringify(sorted(pathsOf(txt.entries))) ===
-      JSON.stringify(["a.txt", "big.txt", "deep/f.txt", "depth/n1/n2/n3/n4/n5/n6/shallow.txt", "literal.txt"]),
+      JSON.stringify(["a.txt", "big.txt", "deep/f.txt", "depth/n1/n2/n3/n4/n5/n6/shallow.txt", "literal.txt", "trailing.txt"]),
     JSON.stringify(sorted(pathsOf(txt.entries))),
   )
 
@@ -212,6 +227,18 @@ function testGlob() {
   check("JT-17 小上限同样标注截断", small.files.length === 10 && small.truncated.files === true, `files=${small.files.length}`)
   const withinCap = walk(MAIN_ROOT)
   check("JT-17 未命中上限时不误标截断", withinCap.truncated.files === false && withinCap.truncated.depth === true, JSON.stringify(withinCap.truncated))
+
+  // Minor 回归：globset 取反类与行切分（code-review Minor 1/2）
+  check("CR-m1 glob [!abc] 翻译为取反类", globSource("[!a]") === "[^a]", globSource("[!a]"))
+  check("CR-m1 glob [a!b] 的 ! 保持字面量", globSource("[a!b]") === "[a!b]", globSource("[a!b]"))
+  check("CR-m1 [!.]* 不匹配以点开头的名字", !new RegExp(`^${globSource("[!.]*")}$`).test(".hidden"), globSource("[!.]*"))
+  check("CR-m1 [!.]* 匹配普通名字", new RegExp(`^${globSource("[!.]*")}$`).test("visible"), globSource("[!.]*"))
+  check(
+    "CR-m2 结尾换行不产生幽灵空行（^ 不误配）",
+    searchTree({ root: MAIN_ROOT, pattern: "^$", path: path.join(MAIN_ROOT, "trailing.txt") }).matches.length === 0,
+    String(searchTree({ root: MAIN_ROOT, pattern: "^$", path: path.join(MAIN_ROOT, "trailing.txt") }).matches.length),
+  )
+  check("CR-2 匹配窗口常量存在且为正", Number.isInteger(MAX_MATCH_CHARS) && MAX_MATCH_CHARS > 0, String(MAX_MATCH_CHARS))
 }
 
 /** ------------------------------------------------ 不可读/缺失路径 JT-19 */
@@ -261,7 +288,7 @@ function testSentinelProtocol() {
   check("JT-23 脚本含哨兵回显（单条 echo 打印 $?）", script.includes(`echo "__OC_${nonce}_$?__"`), script.split("\n").slice(-2)[0])
   check("JT-23 脚本用唯一 heredoc 标记承载命令原文", script.includes(`cat <<'__OCEOF_${nonce}__'`) && script.includes(`\n__OCEOF_${nonce}__\n`), script.split("\n")[0])
   check("JT-23 命令原文仍在 stdin 脚本内", script.includes("ls /nonexistent; echo rc=$?"))
-  check("JT-23 子 shell 隔离 + stderr 并入 stdout", script.includes(`( eval "$__oc_command" ) 2>&1`))
+  check("JT-23 子 shell 隔离 + stderr 并入 stdout + stdin 隔离", script.includes(`( eval "$__oc_command" ) </dev/null 2>&1`))
 }
 
 /** ------------------------------------------------ 常驻 shell 协议（假 sh 注入） */

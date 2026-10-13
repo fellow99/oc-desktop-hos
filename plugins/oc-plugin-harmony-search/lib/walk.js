@@ -28,6 +28,22 @@ export const MAX_FILE_BYTES = 524288
 export const MAX_DEPTH = 8
 export const MAX_LINE_CHARS = 300
 export const MAX_RESULTS = 200
+/**
+ * 单次调用可请求的结果条数**硬上限**（FR-tool-014：上限不可被入参绕过）。
+ * 模型可以传 `limit`，但只能把上限**收紧**到 MAX_LIMIT 以内；超出即被钳制并**显式标注**。
+ * 为什么必须有硬上限：没有它时 `limit: 1000000` 会让 `results` 提前 break 永不触发，
+ * 遍历读到 MAX_FILES × MAX_FILE_BYTES（≈1 GB）并把每行匹配都存成对象 ⇒ 服务端 OOM/挂死，
+ * 而服务端在 `inprocess` 宿主形态下就是 Electron 主进程。
+ */
+export const MAX_LIMIT = 1000
+/**
+ * `matcher.test()` 的作用窗口（FR-tool-014）。匹配**只作用于每行的前 N 个字符**：
+ * 模型给出的正则是不可信的（嵌套量词如 `(a+)+$` 会产生灾难性回溯），而 JS 正则没有超时机制，
+ * 在服务端唯一线程上会**永久阻塞**（上游 `rg` 是线性时间，因此这是本替代方案新引入的失败面）。
+ * 限制窗口不能根治回溯，但把最坏情况的输入规模压到可控范围；残余风险在
+ * `plugins/oc-plugin-harmony-search/README.md` 登记为已知限制。
+ */
+export const MAX_MATCH_CHARS = 4096
 export const BINARY_PROBE_BYTES = 8000
 
 /** 噪声/规模控制：这些目录名一律不进入（FR-tool-015） */
@@ -130,7 +146,12 @@ export function readTextFile(absolute, maxBytes = MAX_FILE_BYTES) {
       if (chunk === 0) break
       read += chunk
     }
-    return { kind: "text", text: buffer.subarray(0, read).toString("utf8"), truncated: size > maxBytes, bytes: size }
+    try {
+      const text = new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, read))
+      return { kind: "text", text, truncated: size > maxBytes, bytes: size }
+    } catch {
+      return { kind: "binary" }
+    }
   } catch (error) {
     return { kind: "error", message: toMessage(error) }
   } finally {
@@ -185,7 +206,13 @@ export function globSource(pattern) {
     if (char === "[") {
       const close = pattern.indexOf("]", index + 1)
       if (close > index) {
-        source += pattern.slice(index, close + 1)
+        const body = pattern.slice(index + 1, close)
+        // globset 的取反类是 `[!abc]`，而 RegExp 用 `[^abc]`；直接透传会让 `[!abc]` 变成
+        // 「! 或 a 或 b 或 c」（`[!.]*` 这类常见写法会静默给出错误结果）。
+        // 只翻译**开头**的 `!`：`[a!b]` 里的 `!` 是普通字符，保持原样。
+        const translated = body.startsWith("!") ? "^" + body.slice(1) : body
+        // 仍以第一个 `]` 截断，所以类里不可能逃逸出未转义的内容
+        source += "[" + translated + "]"
         index = close + 1
         continue
       }
@@ -219,11 +246,14 @@ export function compileGlob(pattern) {
 export function searchTree(options) {
   const root = options.root
   const base = options.base ?? root
-  const limit = options.limit ?? MAX_RESULTS
+  // 入参只能收紧上限（FR-tool-014）：超出即钳制，钳制事实在 truncated.limitClamped 上显式带出
+  const requested = options.limit ?? MAX_RESULTS
+  const limit = Math.max(1, Math.min(requested, MAX_LIMIT))
+  const limitClamped = requested > MAX_LIMIT
   const matcher = createMatcher(options)
   const walked = walk(root, { maxFiles: options.maxFiles, maxDepth: options.maxDepth })
   const fileFilter = options.glob ? compileGlob(options.glob) : undefined
-  const truncated = { ...walked.truncated, results: false, lines: false, bytes: false }
+  const truncated = { ...walked.truncated, results: false, lines: false, bytes: false, limitClamped }
   const matches = []
   let scanned = 0
   let binary = 0
@@ -243,10 +273,16 @@ export function searchTree(options) {
     }
     if (read.truncated) truncated.bytes = true
     scanned += 1
-    const lines = read.text.split("\n")
+    // 行切分：结尾的 "\n" 不产生幽灵空行（否则 `^`/`$`/`a?` 会在文件尾多报一条 rg 不会报的匹配）
+    const rawLines = read.text.split("\n")
+    if (rawLines.length > 1 && rawLines[rawLines.length - 1] === "") rawLines.pop()
+    const lines = rawLines
     for (let index = 0; index < lines.length; index += 1) {
       const raw = lines[index].endsWith("\r") ? lines[index].slice(0, -1) : lines[index]
-      if (!matcher.test(raw)) continue
+      // 只在前 MAX_MATCH_CHARS 个字符上跑正则（见 MAX_MATCH_CHARS 的说明：不可信正则的规模闸门）
+      const window = raw.length > MAX_MATCH_CHARS ? raw.slice(0, MAX_MATCH_CHARS) : raw
+      if (raw.length > MAX_MATCH_CHARS) truncated.lines = true
+      if (!matcher.test(window)) continue
       if (matches.length >= limit) {
         truncated.results = true
         break
@@ -265,10 +301,12 @@ export function searchTree(options) {
 export function findTree(options) {
   const root = options.root
   const base = options.base ?? root
-  const limit = options.limit ?? MAX_RESULTS
+  // 同 searchTree：入参只能收紧结果上限
+  const globRequested = options.limit ?? MAX_RESULTS
+  const limit = Math.max(1, Math.min(globRequested, MAX_LIMIT))
   const matcher = compileGlob(options.pattern)
   const walked = walk(root, { maxFiles: options.maxFiles, maxDepth: options.maxDepth })
-  const truncated = { ...walked.truncated, results: false }
+  const truncated = { ...walked.truncated, results: false, limitClamped: globRequested > MAX_LIMIT }
   const entries = []
 
   for (const file of walked.files) {

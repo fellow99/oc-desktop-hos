@@ -23,13 +23,33 @@ const { pathToFileURL } = require('node:url');
 const { ensureExtracted, readMarker } = require('./tar-extract.js');
 
 const LOG = '[oc-desktop]';
-// [临时诊断] 真机上 console.error 不入 hilog：把日志与异常同时落盘（诊断取到结论后移除）
-const TRACE_FILE = '/data/storage/el2/base/files/ocr-trace.log';
+// 真机上 console.error 不入 hilog：日志与异常必须同时落盘，否则失败既不可见也不可查。
+const DEFAULT_TRACE_FILE = '/data/storage/el2/base/files/ocr-trace.log';
+/** trace 体积上限：真机长期运行不能无限追加；超过即轮换成单份 .1 */
+const TRACE_MAX_BYTES = Number(process.env.OCR_TRACE_MAX_BYTES || 4 * 1024 * 1024);
+const TRACE_FILE = process.env.OCR_TRACE_FILE || DEFAULT_TRACE_FILE;
+/**
+ * 启动状态文件（应用域可写、`sh` 域可读 0666）。
+ *
+ * 为什么必须落文件：真机上 `console.error` 不入 hilog，而加载页在就绪后已被真实 UI 取代，
+ * 于是「插件物化失败」与「一切正常」在所有可观测面上完全一样。该文件是设备侧唯一能区分二者的证据
+ * （FR-tool-018 的 fail-visible 要求）。
+ */
+const STARTUP_STATUS_FILE =
+  process.env.OCR_STARTUP_STATUS_FILE || '/data/storage/el2/base/files/ocr-startup-status.json';
 const trace = (level, args) => {
   try {
+    rotateTraceIfNeeded();
     fs.appendFileSync(TRACE_FILE, `${new Date().toISOString()} ${level} ${args.map((a) => (a && a.stack) || String(a)).join(' ')}\n`);
   } catch {}
 };
+/** 超过上限就把当前 trace 改名为 .1（覆盖旧 .1），避免无限增长 */
+function rotateTraceIfNeeded() {
+  try {
+    if (fs.statSync(TRACE_FILE).size <= TRACE_MAX_BYTES) return;
+    fs.renameSync(TRACE_FILE, `${TRACE_FILE}.1`);
+  } catch {}
+}
 const log = (...args) => {
   trace('LOG', args);
   console.log(LOG, ...args);
@@ -38,9 +58,26 @@ const fail = (stage, error) => {
   const message = error && error.stack ? error.stack : String(error);
   trace('FAIL', [`[${stage}]`, message]);
   console.error(`${LOG}[${stage}] 失败: ${message}`);
-  globalThis.__ocError = { stage, message };
+  // 累积而不是覆盖：`__ocError` 保留最后一条（历史行为，兼容），`__ocErrors` 保留全部 ——
+  // 否则「先失败、后成功」会把失败证据丢掉。
+  const entry = { stage, message, at: new Date().toISOString() };
+  globalThis.__ocError = entry;
+  if (!Array.isArray(globalThis.__ocErrors)) globalThis.__ocErrors = [];
+  globalThis.__ocErrors.push(entry);
+  writeStartupStatus();
   return message;
 };
+/** 把累积的失败落成可读状态文件（见 STARTUP_STATUS_FILE 的说明） */
+function writeStartupStatus() {
+  try {
+    const errors = Array.isArray(globalThis.__ocErrors) ? globalThis.__ocErrors : [];
+    fs.writeFileSync(
+      STARTUP_STATUS_FILE,
+      `${JSON.stringify({ ok: errors.length === 0, stage: currentStage, errors, updatedAt: new Date().toISOString() }, null, 2)}\n`,
+      { mode: 0o666 },
+    );
+  } catch {}
+}
 process.on('uncaughtException', (error) => trace('UNCAUGHT_EXCEPTION', [error]));
 process.on('unhandledRejection', (reason) => trace('UNHANDLED_REJECTION', [reason]));
 
@@ -459,6 +496,8 @@ function shutdown(reason) {
 }
 
 async function main() {
+  // 启动即落一份「暂无失败」的状态文件：让设备侧能区分「没有失败」与「状态文件从未写出」
+  writeStartupStatus();
   // 渲染层地址与端口在 app ready 前确定：Chromium 的安全来源开关只能在 ready 前设置
   lanAddress = process.env.OCR_LAN_ADDRESS || pickLanAddress();
   serverPort = serverPort || (await pickPort());

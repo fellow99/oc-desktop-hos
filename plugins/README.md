@@ -69,7 +69,15 @@ plugins/
     └── README.md           # 说明它做什么、依赖哪些设备能力、如何验证
 ```
 
-`<name>` 用 `kebab-case`，且**不要**出现 `Harmony` / `DeepSeek` 等上架禁用词（工程规划 §8.5 G8）。
+`<name>` 用 `kebab-case`。
+
+**上架禁用词的作用域（code review 后澄清）**：`Harmony` / `DeepSeek` 等禁用词（工程规划 §8.5 G8）约束的是
+**用户可见文案** —— 即工具的 `name` 与 `description`（会显示在界面上），由 `scripts/collect-app.mjs` 的
+「导入式工具元数据检查」在构建期拦截。**内部标识符不受此限**：目录名（`oc-plugin-harmony-*`）、插件 `id`
+（`oc-harmony-*`）、规格路径里的 `harmony` 都不会呈现给用户，且与兄弟工程
+（`dsh-desktop-hos` 的 `harmony-plugin-XXX`、`pi-desktop-hos` 的 `extensions/`）保持一致。
+早期版本此处写成「目录名不得含 Harmony」并配了一个**大小写敏感**的检查 —— 那对本工程的小写目录名
+永远不会命中，等于没有约束；现已改为对用户可见文案做大小写不敏感检查。
 
 ## 5. 插件准入条件（必须自证，缺一不合并）
 

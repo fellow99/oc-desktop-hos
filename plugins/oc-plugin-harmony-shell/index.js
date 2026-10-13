@@ -70,7 +70,9 @@ export function commandScript(command, nonce) {
     String(command),
     marker,
     `)`,
-    `( eval "$__oc_command" ) 2>&1`,
+    // </dev/null 是必须的：常驻 shell 的 stdin 就是脚本通道，命令若读 stdin 会吞掉后续脚本行
+    // （引号不平衡时的 heredoc 定界也是为此），并阻塞到超时。命令没有任何理由读那个 fd。
+    `( eval "$__oc_command" ) </dev/null 2>&1`,
     `echo "__OC_${nonce}_$?__"`,
     ``,
   ].join("\n")
@@ -116,7 +118,10 @@ export function createResidentShell(options = {}) {
     current.resolve(result)
   }
 
-  const onData = (text) => {
+  const onData = (text, owner) => {
+    // 代际守卫：被 dispose 掉的旧 child（或它留下、仍持有 fd 1 的孙进程）继续写数据时，
+    // 这些字节必须丢弃 —— 否则会被算进**下一次调用**的输出（串结果）。
+    if (owner !== undefined && owner !== child) return
     const buffer = pendingTail + text
     const found = pending === null ? undefined : findSentinel(buffer, pending.nonce)
     if (found === undefined) {
@@ -133,11 +138,23 @@ export function createResidentShell(options = {}) {
 
   const disposeChild = () => {
     if (child !== null) {
+      const dying = child
+      // 先摘监听、再杀：否则旧 child 的 data 回调会继续往共享缓冲写（见 onData 的代际守卫）
       try {
-        child.kill()
+        dying.stdout.removeAllListeners("data")
+        dying.stderr.removeAllListeners("data")
+        dying.removeAllListeners("error")
+        dying.stdin.removeAllListeners("error")
+      } catch {
+        // 摘监听失败不影响正确性：代际守卫仍会丢弃旧 child 的数据
+      }
+      try {
+        dying.kill()
       } catch {
         // 杀掉失败无所谓：进程已不可用，下一次调用会重新 spawn
       }
+      // kill 只作用于常驻 shell 自身。若命令留下了继承 fd 1 的后台孙进程，本工程无法可靠回收
+      //（应用域无内核沙箱；杀进程组会波及自身），该残余风险登记在 README 的「已知限制」。
     }
     child = null
     ready = null
@@ -156,8 +173,8 @@ export function createResidentShell(options = {}) {
     spawned.stdout.setEncoding("utf8")
     spawned.stderr.setEncoding("utf8")
     // stdout 与 stderr 合并进同一个缓冲：上游 shell 也是合并口径（FR-tool-009）
-    spawned.stdout.on("data", (chunk) => onData(chunk))
-    spawned.stderr.on("data", (chunk) => onData(chunk))
+    spawned.stdout.on("data", (chunk) => onData(chunk, spawned))
+    spawned.stderr.on("data", (chunk) => onData(chunk, spawned))
     spawned.on("error", (error) => settle({ ok: false, code: "spawn-failed", message: error.message }))
     spawned.stdin.on("error", (error) => settle({ ok: false, code: "write-failed", message: error.message }))
     child = spawned
@@ -209,12 +226,24 @@ export function createResidentShell(options = {}) {
   }
 
   /** 单次命令：串行化（并发工具调用不串输出，JT-39），每次调用清空本调用缓冲 */
-  const runCommand = (command, timeoutMs) => {
+  const runCommand = (command, timeoutMs, signal) => {
     const next = chain.then(async () => {
+      // 排队期间就被中断：不必也不必去动常驻 shell（它此刻属于别的调用）
+      if (signal && signal.aborted === true)
+        return { ok: false, code: "killed", message: "调用在开始前已被中断", output: "" }
+      // 只有走到这里才说明本调用是当前等待者：此时中断才可以丢弃常驻 shell
+      const onAbort = () => disposeChild()
+      if (signal && typeof signal.addEventListener === "function") signal.addEventListener("abort", onAbort, { once: true })
       const readiness = await ensureReady()
       if (!readiness.ok) return { ok: false, code: readiness.code, message: readiness.message, output: "" }
       const nonce = createNonce()
-      const result = await send(commandScript(command, nonce), nonce, timeoutMs)
+      let result
+      try {
+        result = await send(commandScript(command, nonce), nonce, timeoutMs)
+      } finally {
+        if (signal && typeof signal.removeEventListener === "function")
+          signal.removeEventListener("abort", onAbort)
+      }
       if (result.ok) return { ok: true, rc: result.rc, ms: result.ms, output, truncated: outputTruncated }
       const partial = { output, truncated: outputTruncated, ms: result.ms }
       // 超时/写失败后旧进程不可信：杀掉并让下一次调用惰性重启（FR-tool-008）
@@ -240,7 +269,7 @@ export function createResidentShell(options = {}) {
 
   return {
     defaultTimeout,
-    execute: (command, timeoutMs) => runCommand(command, timeoutMs ?? defaultTimeout),
+    execute: (command, timeoutMs, signal) => runCommand(command, timeoutMs ?? defaultTimeout, signal),
     /** abort/超时/插件卸载时释放常驻进程（FR-tool-005：cleanup 必须释放资源） */
     dispose: disposeChild,
   }
@@ -316,11 +345,11 @@ export function shellTool(resident) {
       const parsed = shellArguments(input)
       if (!parsed.ok) return errorResult(parsed.error)
       const signal = context && context.signal
-      // 中断即丢弃常驻 shell：否则下一次调用会白等满超时
-      const onAbort = () => resident.dispose()
-      if (signal && typeof signal.addEventListener === "function") signal.addEventListener("abort", onAbort, { once: true })
+      // 中断语义：把 AbortSignal 交给常驻 shell 自己处理 —— 它只在**本次调用真正成为当前等待者**
+      // 时才丢弃常驻 shell。若在工具层无条件 dispose，会把排队中（还没轮到）的调用被中断这件事
+      // 迁怒到正在等待同一串行链的另一次调用上。
       try {
-        const result = await resident.execute(parsed.value.command, parsed.value.timeout)
+        const result = await resident.execute(parsed.value.command, parsed.value.timeout, signal)
         return {
           content: formatShellContent(result),
           metadata: {
@@ -358,6 +387,14 @@ export default {
       editor.remove("opencode.tool.shell")
       editor.remove("shell")
       editor.add(shellTool(resident))
+      // 上游 add 校验失败时只把原因推进 editor.errors（宿主仅记一条日志），而内置 shell 已被 remove，
+      // 一旦新增失败模型将**彻底没有** shell 工具且没有任何失败信号。显式复查注册结果，缺失即抛错，
+      // 让插件在 inventory 里变为 failed（fail-visible，FR-tool-019）。
+      if (editor.get("shell") === undefined)
+        throw new Error(
+          "oc-harmony-shell: shell 工具注册失败（editor.get 取不到 shell）；" +
+            "上游 editor.errors=" + JSON.stringify(editor.errors ?? null),
+        )
     })
     // cleanup：宿主卸载插件时杀掉常驻 shell（FR-tool-005）
     return () => resident.dispose()

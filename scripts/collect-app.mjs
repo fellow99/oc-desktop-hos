@@ -27,7 +27,7 @@ import { spawnSync } from "node:child_process"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import {
   banner,
   copyTree,
@@ -57,7 +57,12 @@ const PLUGIN_PREFIX = "oc-plugin-"
 /** 唯一允许的 spawn 目标（设备自带 POSIX shell） */
 const ALLOWED_SPAWN_TARGET = "/system/bin/sh"
 /** 上架/平台禁用词（plugins/README.md §4） */
-const FORBIDDEN_NAME_WORDS = ["Harmony", "DeepSeek"]
+/**
+ * 上架禁用词：只约束**用户可见文案**（工具的 name / description 会出现在界面上），
+ * 不约束内部标识符（目录名 / 插件 id / specs 路径里的 harmony 都不是用户可见面）。
+ * 小写比较，避免「大小写写错就静默失效」。
+ */
+const FORBIDDEN_USER_VISIBLE_WORDS = ["harmony", "deepseek"]
 
 const args = parseArgs()
 
@@ -155,12 +160,66 @@ function discoverPlugins() {
     const parsed = JSON.parse(readText(manifest))
     require_(parsed.name === name, `${name}: package.json 的 name=${parsed.name} 与目录名不一致`)
     require_(parsed.type === "module", `${name}: package.json 必须声明 "type": "module"（否则 node --check 静默放过 ESM）`)
-    for (const word of FORBIDDEN_NAME_WORDS) {
-      require_(!name.includes(word), `${name}: 目录名含上架禁用词 ${word}`)
-    }
+
     return { name, directory }
   })
   return plugins
+}
+
+/**
+ * 导入式工具元数据检查（替换原「禁用词」死代码）。
+ * 用捕获式 editor 跑一遍插件 setup，断言：
+ *   1) 注册的工具名与预期一致（上游改名 / 自己写错都会在构建期暴露，而不是运行时）；
+ *   2) 工具的 name / description 里没有上架禁用词（用户可见面）。
+ * 说明：只 import 本工程自己的插件（无第三方依赖、只用 node 内建），因此构建期可安全执行。
+ */
+async function assertToolMetadata(plugins) {
+  banner(3, "导入式工具元数据检查");
+  const expected = { "oc-plugin-harmony-shell": ["shell"], "oc-plugin-harmony-search": ["grep", "glob"] }
+  let total = 0
+  for (const plugin of plugins) {
+    const moduleUrl = pathToFileURL(join(plugin.directory, "index.js")).href
+    const mod = await import(moduleUrl)
+    const definition = mod.default
+    require_(definition && typeof definition.id === "string", `${plugin.name}: 默认导出缺少 id`)
+    require_(typeof definition.setup === "function", `${plugin.name}: 默认导出缺少 setup()`)
+    const added = []
+    const removed = []
+    const editor = {
+      list: () => added,
+      get: (name) => added.find((tool) => tool.name === name),
+      namespace: () => {},
+      add: (tool) => {
+        require_(tool && typeof tool.name === "string", `${plugin.name}: 注册的工具缺少 name`)
+        added.push(tool)
+      },
+      update: () => {},
+      remove: (name) => removed.push(name),
+    }
+    const context = { tool: { transform: async (callback) => callback(editor) } }
+    await definition.setup(context)
+    const names = added.map((tool) => tool.name).sort()
+    const want = (expected[plugin.name] ?? []).slice().sort()
+    require_(
+      JSON.stringify(names) === JSON.stringify(want),
+      `${plugin.name}: 注册的工具名不符合预期（实际 ${JSON.stringify(names)}，期望 ${JSON.stringify(want)}）`,
+    )
+    for (const tool of added) {
+      require_(typeof tool.description === "string" && tool.description.length > 0, `${plugin.name}/${tool.name}: 缺少 description`)
+      require_(tool.input !== undefined, `${plugin.name}/${tool.name}: 缺少 input（JSON Schema）`)
+      require_(typeof tool.execute === "function", `${plugin.name}/${tool.name}: 缺少 execute`)
+      const haystack = `${tool.name} ${tool.description}`.toLowerCase()
+      for (const word of FORBIDDEN_USER_VISIBLE_WORDS) {
+        require_(
+          !haystack.includes(word),
+          `${plugin.name}/${tool.name}: 用户可见文案含上架禁用词 ${word}（工具名与描述会显示在界面上）`,
+        )
+      }
+    }
+    total += added.length
+    log(3, `工具元数据通过：${plugin.name} → ${names.join(", ")}（覆盖 ${removed.length} 个上游键）`)
+  }
+  require_(total > 0, "没有任何插件注册工具，插件通道实际为空")
 }
 
 /** resfile 投放（先清理同名目标，保证幂等可重复：FR-tool-017） */
@@ -265,12 +324,14 @@ function selfTest() {
 
 // ------------------------------------------------------------------ main
 
-function main() {
+async function main() {
   if (args.has("self-test")) {
     selfTest()
     return
   }
   const plugins = discoverPlugins()
+  // 导入式工具元数据检查（用户可见文案 + 工具名契约）
+  await assertToolMetadata(plugins)
   const files = plugins.map((plugin) => {
     const count = assertPluginTree(plugin.directory, plugin.name)
     log(3, `静态断言通过：${plugin.name}（${count} 个 .js，无 PTY / 无 exec / 无 .node / spawn 仅 ${ALLOWED_SPAWN_TARGET}）`)
@@ -296,4 +357,7 @@ function main() {
   )
 }
 
-main()
+main().catch((error) => {
+  console.error(`[oc-desktop] 错误: ${error && error.message ? error.message : String(error)}`)
+  process.exit(1)
+})

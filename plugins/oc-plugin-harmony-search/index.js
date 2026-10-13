@@ -20,6 +20,7 @@ import {
   MAX_FILE_BYTES,
   MAX_LINE_CHARS,
   MAX_RESULTS,
+  MAX_LIMIT,
   findTree,
   searchTree,
 } from "./lib/walk.js"
@@ -122,7 +123,8 @@ export function grepArguments(input = {}) {
       glob: input.glob,
       ignoreCase: input.ignoreCase === true,
       literal: input.literal === true,
-      limit: limit ?? MAX_RESULTS,
+      limit: Math.min(limit ?? MAX_RESULTS, MAX_LIMIT),
+      limitClamped: (limit ?? MAX_RESULTS) > MAX_LIMIT,
     },
   }
 }
@@ -135,13 +137,22 @@ export function globArguments(input = {}) {
   const limit = input.limit
   if (limit !== undefined && (!Number.isInteger(limit) || limit < 1))
     return { ok: false, error: "`limit` must be a positive integer." }
-  return { ok: true, value: { pattern: input.pattern, path: input.path, limit: limit ?? MAX_RESULTS } }
+  return {
+    ok: true,
+    value: {
+      pattern: input.pattern,
+      path: input.path,
+      limit: Math.min(limit ?? MAX_RESULTS, MAX_LIMIT),
+      limitClamped: (limit ?? MAX_RESULTS) > MAX_LIMIT,
+    },
+  }
 }
 
 /** 截断说明：命中任何上限都必须显式出现在结果里（FR-tool-014，不得静默截断） */
 function truncationNotes(truncated) {
   const notes = []
   if (truncated.results) notes.push("(Results are truncated: use a more specific `pattern`, `path` or `glob`.)")
+  if (truncated.limitClamped) notes.push(`(The requested \`limit\` exceeded the hard cap and was clamped to ${MAX_LIMIT}.)`)
   if (truncated.files) notes.push(`(The walk stopped after ${MAX_FILES} files: not every file was searched.)`)
   if (truncated.depth)
     notes.push(`(The walk stopped at ${MAX_DEPTH} levels deep: deeper directories were not searched.)`)
@@ -280,6 +291,15 @@ export default {
       editor.remove(GLOB_TOOL_NAME)
       editor.add(grepTool(root))
       editor.add(globTool(root))
+      // 上游 `add` 校验失败时只把原因推进 editor.errors（宿主仅记一条日志），
+      // 而我们已经把内置工具 remove 掉了 ⇒ 若新增失败，模型将**同时失去** grep 与 glob 且没有任何失败信号。
+      // 因此这里显式复查注册结果，缺失即抛错，让插件在 inventory 里变为 failed（fail-visible，FR-tool-019）。
+      const missing = [GREP_TOOL_NAME, GLOB_TOOL_NAME].filter((name) => editor.get(name) === undefined)
+      if (missing.length > 0)
+        throw new Error(
+          `oc-harmony-search: 工具注册失败（editor.get 取不到 ${missing.join(", ")}）；` +
+            `上游 editor.errors=${JSON.stringify(editor.errors ?? null)}`,
+        )
     })
   },
 }
