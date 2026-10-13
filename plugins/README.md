@@ -31,25 +31,31 @@ opencode 不会读这里，HAP 把它直接放进 `resfile` 也不会生效（�
 推论（§3.9/§7.5）：v1 下 `GET /api/plugin` 返回**空清单属预期行为**，
 UI 与验收脚本不得把空清单当故障；若出现 `pending` / `failed`，壳层必须有可见提示（禁止静默失败）。
 
-## 3. 物化路径（构建期投放，不手工拷贝）
+## 3. 物化路径（构建期投放，启动期 copy；已落地）
 
 opencode 只认**配置目录**下的 `plugin/`、`plugins/`。本工程 `plugins/` 是**源码与打包源**，
-构建期由 `scripts/collect-app.mjs` 物化到随 `XDG_CONFIG_HOME` 映射的位置（工程规划 §3.9、§5.3）：
+由 `scripts/collect-app.mjs` 在构建期投放，再由 `src-main/main.js` 在**每次启动**物化（工程规划 §3.9、§5.3）：
 
 ```
-plugins/<oc-plugin-name>/**        （源码，本目录）
-        ↓ 构建期物化（Phase 2）
-<userData>/config/opencode/plugin/<oc-plugin-name>/     # <userData> = /data/storage/el2/base/files
+plugins/<oc-plugin-name>/**                        （源码，本目录）
+        ↓ 构建期 scripts/collect-app.mjs（copy + sha256 校验 + node --check + 静态断言）
+web_engine/src/main/resources/resfile/resources/app/plugins/<oc-plugin-name>/   （包内只读）
+        ↓ 启动期 src-main/main.js 的 materializePlugins()（copy + 清理同名，禁 symlink）
+<userData>/config/opencode/plugin/<oc-plugin-name>/       # <userData> = /data/storage/el2/base/files
 ```
 
 规则：
 
 - **禁止 symlink**：真机 `symlink` 报 `EACCES`（§7.3），一律 **copy 物化**；
 - 插件依赖必须**构建期预置**（随包 copy 落盘），v1 不启用运行时安装；
-- 直接放进 `web_engine/src/main/resources/resfile/` **不会生效**（那不在配置目录集合内）；
-- 物化后由 `collect-app.mjs` 做存在性/形态校验（fail-visible）。
+- 直接放进 `web_engine/src/main/resources/resfile/` 的**其他**位置不会生效（必须经 `collect-app.mjs`
+  投放到 `resfile/resources/app/plugins/`，并由启动期物化进配置目录）；
+- 物化失败由 `main.js` 的 `fail()` 路径可见（`__ocError` + 日志），**不静默**；
+- **构建顺序**：`collect-runtime` → `build-opencode` → **`collect-app`** → `build-debug`。
+  `collect-runtime` 的 `APP_KEEP` 白名单已包含 `plugins`，重跑它不会误删插件投放物。
 
-> ⬜ 待验证：`collect-app.mjs` 的插件投放与校验尚未实现（Phase 2）；本节给出的是契约，不是现状。
+**现状（2.0.26）**：本目录下已落地 2 个插件 —— `oc-plugin-harmony-shell`、`oc-plugin-harmony-search`
+（见 §7）。`docs/鸿蒙环境能力清单-v2.0.26.md` 记录真机验收结论。
 
 ## 4. 命名约定
 
@@ -88,3 +94,18 @@ plugins/
 - host 侧：插件入口能被 `import()` 且 `export default` 形态符合契约（不依赖真机能力）；
 - 真机：`GET /api/plugin` inventory 中该插件为已加载；故意制造失败时 `status:"failed"` 可见；
 - 反向用例：插件内出现 `spawn` / PTY / `.node` 依赖时必须在评审阶段被拒（不是运行时才发现）。
+
+## 7. 现有插件（2.0.26）
+
+| 插件 | 覆盖/新增的工具 | 为什么需要 | 上游契约落点 |
+|---|---|---|---|
+| [`oc-plugin-harmony-shell`](./oc-plugin-harmony-shell/) | 覆盖 `shell` | 上游 `shell` 走 cross-spawn 并等待子进程 `exit`/`close` 事件；本设备**永不触发**这些事件 ⇒ 工具挂死。改为「常驻 `/system/bin/sh` + 随机哨兵行」，结束判定回到 stdout | `context.tool.transform(e => (e.remove("shell"), e.add(...)))` |
+| [`oc-plugin-harmony-search`](./oc-plugin-harmony-search/) | 覆盖 `grep`、`glob` | 上游两者**必然**经 `Ripgrep.Service` spawn `rg`，而平台表无 `arm64-ohos` 键 ⇒ 抛 `unsupported platform for ripgrep`。改为纯 JS 遍历 + 正则 | 同上 |
+
+规格与验收：`specs/102-harmony-js-tools/{spec,plan,tasks,test-cases}.md`；
+host 侧测试：`node scripts/test-harmony-plugins.mjs`；
+静态断言（含反向用例）：`node scripts/collect-app.mjs --self-test`。
+
+> ⚠️ **工具覆盖键是「有效名」**：opencode v2 的 `editor.add/update/remove` 按**有效工具名**
+> （`shell` / `grep` / `glob`，即模型可见的名字）索引，而 `opencode.tool.*` 是**插件 id**。
+> 本工程两个插件同时 `remove` 有效名与 `opencode.tool.*` 两种写法，避免上游语义漂移导致覆盖静默失效。

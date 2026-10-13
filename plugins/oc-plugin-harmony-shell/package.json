@@ -1,0 +1,8 @@
+{
+  "name": "oc-plugin-harmony-shell",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "description": "常驻 /system/bin/sh + 哨兵行的 shell 工具替代（上游 shell 在设备上因子进程事件不触发而挂死）"
+}

@@ -1,0 +1,8 @@
+{
+  "name": "oc-plugin-harmony-search",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "description": "纯 JS 的 grep / glob 工具替代（设备上 ripgrep 不可用）"
+}
