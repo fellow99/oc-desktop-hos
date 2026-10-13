@@ -10,6 +10,7 @@ Electron-on-HarmonyOS 运行时承载 **opencode v2 的服务端**，渲染层�
 | 项 | 值 |
 |---|---|
 | 应用名 / bundleName | **OC Desktop** / `org.fellow99.oc.OCDesktop` |
+| 版本 | **`2.0.26`** / `versionCode` **20026**（规则 `major*10000 + minor*100 + patch`；版本规格见 `specs/101-version-2.0.26/`） |
 | 目标设备 | `2in1` / `tablet`（不做 phone） |
 | 上游基线 | opencode **v2.0.26**（tag `v2.0.26` / 提交 `9b4ec5714d` / 分支 `Branch_v2.0.26`） |
 | 运行时 | Electron **37**（`v37.2.3-20260825.1` = Node **22.17.0** / Chromium 138 / ABI **v138**）；Electron 40（Node 24.11.1）为触发式备选 |
@@ -24,7 +25,7 @@ electron/            entry 模块：运行时 SO + Chromium 资源 + Ability 装
 web_engine/          HAR：ArkTS 桥接层 + resfile 承载应用产物（含 opencode-dist.tar.gz）
 src-main/            Electron 主进程源码（main.js / sidecar.js / tar-extract.js）
 scripts/             构建流水线（见下）
-patches/v2.0.26/     对上游的幂等补丁（0001/0002/0003，含 README）
+patches/v2.0.26/     对上游的幂等补丁（0001–0004，含 README）
 runtime-overlays/    copy 后回盖白名单（模块清单 / 显示名资源）
 specs/               NNN-name/{spec.md,plan.md} 规格体系（索引见 specs/README.md）
 docs/                工程规划 + 四件套（能力清单 / ACL 清单 / toybox 清单 / 真机验证记录）
@@ -41,13 +42,20 @@ $env:DEVECO_SDK_HOME = "D:\oh-workspace\DevEco Studio\sdk"
 node scripts\collect-runtime.mjs
 
 # ② 构建 opencode Node 产物（幂等打补丁 → bun install → build-node --target=linux-arm64 --bundle-only
-#    → collect-opencode（物化 better-sqlite3 + tar.gz + 校验 + 投放）→ smoke-node22 host 门禁）
+# ② 收集壳应用层（把 plugins/oc-plugin-* 投放进 resfile + sha256 校验 + node --check + 静态断言）
+node scripts\collect-app.mjs
+
+# ③ 构建 opencode Node 产物（幂等打补丁 → bun install → build-node --target=linux-arm64 --bundle-only
+#    → collect-opencode（品牌化 Web UI + 物化 better-sqlite3 + tar.gz + 校验 + 投放）→ smoke-node22 host 门禁）
 node scripts\build-opencode.mjs
 
-# ③ 构建 + 签名（必须用 DevEco 自带 JBR；脚本要求 pwsh 7+）
+# ④ 构建 + 签名（必须用 DevEco 自带 JBR；脚本要求 pwsh 7+）
 pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\build-debug.ps1
 
-# ④ 安装 + 启动（部署前建议先卸载，清掉 userData 里的旧产物与 marker）
+# ⑤ 安装 + 启动（部署前建议先卸载，清掉 userData 里的旧产物与 marker）
+hdc uninstall org.fellow99.oc.OCDesktop
+hdc app install -r electron\build\default\outputs\default\electron-default-signed.hap
+hdc shell aa start -a EntryAbility -b org.fellow99.oc.OCDesktop
 hdc uninstall org.fellow99.oc.OCDesktop
 hdc app install -r electron\build\default\outputs\default\electron-default-signed.hap
 hdc shell aa start -a EntryAbility -b org.fellow99.oc.OCDesktop
@@ -61,6 +69,10 @@ hdc shell aa start -a EntryAbility -b org.fellow99.oc.OCDesktop
 | `scripts/build-opencode.mjs` | `--skip-install`、`--no-smoke`、`--bun <path>` |
 | `scripts/smoke-node22.mjs` | host 门禁（Node 22.17.0）：`--version/--help` → `serve` → `/api/info` → 内嵌 UI → SSE |
 | `scripts/collect-opencode.mjs` | `--product <dir>`、`--no-app-copy` |
+| `scripts/collect-app.mjs` | `--check-only`（只跑静态断言与 `node --check`，不投放）、`--self-test`（反向用例证明断言能失败） |
+| `scripts/test-harmony-plugins.mjs` | 插件 host 侧语义测试（`grep`/`glob` 匹配、上限、跳过表、哨兵协议），全绿才允许打包 |
+| `scripts/lib/branding.mjs` | `--generate-icons`（从父工程物料生成包内图标，幂等）、`--brand <in> --out <out>`、`--verify <bin>`、`--self-test` |
+| `scripts/verify-branding.mjs` | 对任意 `app-archive.bin` 跑品牌化后置断言（30 项），非零退出即失败 |
 
 ## 关键约定（细节见工程规划）
 
@@ -83,11 +95,16 @@ hdc shell aa start -a EntryAbility -b org.fellow99.oc.OCDesktop
 
 ## 当前状态
 
-- ✅ 工程骨架、运行时收集（含 10 项结构化守卫全绿）、补丁集（往返校验通过）、构建流水线脚本、规格与文档体系、上架合规守卫。
-- ⬜ **未在真机验证**：三个 Phase 0 探针（P0-1 宿主形态 / P0-2 渲染通道 / P0-3 host 门禁）尚未执行；
-  `opencode-dist.tar.gz` 尚未构建（需 `bun install` 上游依赖）；ACL 未申请；图标为占位。
-- ⬜ 能力缺口（v1 明确降级）：终端 PTY（平台级不可用）、内容搜索（`fff` 需 FFI、`rg` 需执行 ELF）、
-  LSP/formatter/MCP 外部进程、插件安装（默认 L0 关闭）、git/VCS。详见规划 §7。
+- ✅ 工程骨架、运行时收集（含结构化守卫全绿）、补丁集（`0001`–`0004`，往返校验通过）、构建流水线与
+  host 侧 Node 22.17 冒烟门禁、规格与文档体系、上架合规守卫。
+- ✅ **版本 2.0.26**（`versionName 2.0.26` / `versionCode 20026`）；在真机（HOS）完成构建 → 部署 → 启动就绪 →
+  基本功能（DeepSeek API Key / 工作区 / 一次真实对话）验证。证据见 `docs/真机验证记录.md`。
+- ✅ **鸿蒙环境能力清单（v2.0.26）**：`docs/鸿蒙环境能力清单-v2.0.26.md`（真机实测；v0.1 版作为历史基线保留）。
+- ✅ **品牌化**：界面与元数据的 `OpenCode` 收敛为 `OC Desktop`，Logo/图标统一取父工程 `assets/` 物料
+  （详见 `specs/103-branding/`）。
+- ✅ **鸿蒙 JS 工具（插件）**：把设备上不可得的能力用纯 JS 插件替代（详见 `specs/102-harmony-js-tools/`）。
+- ⬜ 能力缺口（v1 明确降级）：终端 PTY（平台级不可用）、`fff` FFI 内容搜索、LSP/formatter/MCP 外部进程、
+  插件在线安装（默认关闭）、git/VCS。详见规划 §7 与 `docs/鸿蒙环境能力清单-v2.0.26.md`。
 
 ## 环境要求
 
