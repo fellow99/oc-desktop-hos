@@ -12,10 +12,10 @@ index f3b7fb9738..4e0fb3e7db 100644
        "default": "./src/database/sqlite.node.ts"
 diff --git a/packages/core/src/database/sqlite.ohos.ts b/packages/core/src/database/sqlite.ohos.ts
 new file mode 100644
-index 0000000000..cc63d4ad96
+index 0000000000..f51795a2c3
 --- /dev/null
 +++ b/packages/core/src/database/sqlite.ohos.ts
-@@ -0,0 +1,272 @@
+@@ -0,0 +1,294 @@
 +/**
 + * HarmonyOS (`ohos`) variant of `#sqlite`.
 + *
@@ -86,9 +86,12 @@ index 0000000000..cc63d4ad96
 +}
 +
 +interface BetterSqlite3Statement {
++  /** false = 该语句不返回数据（PRAGMA 赋值 / DDL 等）：better-sqlite3 的 all() 会抛错，需走 run() */
++  readonly reader: boolean
 +  safeIntegers(enabled: boolean): unknown
 +  raw(enabled: boolean): unknown
 +  all(...params: unknown[]): Array<Record<string, unknown>>
++  run(...params: unknown[]): unknown
 +}
 +
 +interface BetterSqlite3Database {
@@ -132,7 +135,26 @@ index 0000000000..cc63d4ad96
 +          // better-sqlite3 only implements the enabling direction.
 +          if (enabled) statement.raw(true)
 +        },
-+        all: (...params) => statement.all(...params),
++        // 语义必须与 node:sqlite 对齐：node 的 all() 对「不返回数据」的语句返回 []，而 better-sqlite3 会抛
++        // "This statement does not return data. Use run() instead"。设备侧 sqlite 变体走 better-sqlite3，
++        // 不对齐会让服务端启动时的 `PRAGMA synchronous = NORMAL` 直接失败（真机实测：cli process failed）。
++        // 注意：aarch64-ohos / ABI v138 的 better-sqlite3 构建未暴露可用的 reader 标志（真机实测
++        // reader === false 判据不成立），因此以「错误语义」兜底，而不依赖该属性。
++        all: (...params) => {
++          if (statement.reader === false) {
++            statement.run(...params)
++            return []
++          }
++          try {
++            return statement.all(...params)
++          } catch (error) {
++            if (/does not return data/i.test(String((error as Error)?.message ?? error))) {
++              statement.run(...params)
++              return []
++            }
++            throw error
++          }
++        },
 +      }
 +    },
 +    exec: (sql) => database.exec(sql),

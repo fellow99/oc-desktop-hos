@@ -23,6 +23,7 @@
  *   node scripts/collect-runtime.mjs --extract-only         只做 0-4、7-9（不覆盖 overlay、不跑守卫）
  *   node scripts/collect-runtime.mjs --verify-only          只跑阶段 10 守卫
  *   node scripts/collect-runtime.mjs --runtime-source <dir> 用预解压的 ohos_hap 目录
+ *   node scripts/collect-runtime.mjs --allow-placeholder-icons 包内图标缺失时回退生成纯色占位图（仅首次导入取骨架）
  *   node scripts/collect-runtime.mjs --release <zip>         指定发行版归档
  *   node scripts/collect-runtime.mjs --no-libcxx --no-sqlite 跳过原生注入（host 侧检查用）
  *
@@ -156,6 +157,9 @@ const APP_KEEP = new Set([
   'electron_white.png',
   'opencode-dist.tar.gz',
   'skills',
+  // 壳专用 opencode 插件（由 scripts/collect-app.mjs 投放；此白名单必须保留它，
+  // 否则「先 collect-app 后重跑 collect-runtime」会把插件从 resfile 删掉）
+  'plugins',
 ]);
 
 /** 权限断言：必须**不得**出现的受限/上架障碍权限（工程规划 §8.3） */
@@ -174,15 +178,28 @@ const REQUIRED_PERMISSIONS = ['ohos.permission.INTERNET'];
 /** JIT 权限（V8 必需，须同时出现在 requestPermissions 与 definePermissions） */
 const JIT_PERMISSION = 'ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY';
 
-/** AppScope 占位图标（纯色不透明，上架合规 §8.5 G2）；仅当文件缺失时生成 */
+/**
+ * 包内图标位（上架合规 §8.5 G2；尺寸与 alpha 规则见 specs/103-branding/spec.md FR-brand-009）。
+ *
+ * 自 2.0.26 起，这 5 个文件由 `scripts/lib/branding.mjs --generate-icons` 从**父工程物料**
+ * `../assets/{logo-1024-with-bg.png,logo.png}` 生成并入库；本表的 `size` 是**必须**满足的边长。
+ *
+ * `ensureAppIcons()` 不再静默兜底：文件缺失即硬失败（FR-brand-010「不得静默产出无品牌/占位图标的包」），
+ * 只有显式传 `--allow-placeholder-icons` 才允许生成纯色占位图（仅用于首次导入取骨架）。
+ */
 const PLACEHOLDER_ICONS = [
   ['AppScope/resources/base/media/app_icon.png', 1024],
   ['AppScope/resources/base/media/icon.png', 512],
   ['AppScope/resources/base/media/startIcon.png', 512],
   ['AppScope/resources/base/media/product_logo_32.png', 32],
-  ['AppScope/resources/base/media/window_icon.png', 512],
+  ['AppScope/resources/base/media/window_icon.png', 200],
 ];
-const PLACEHOLDER_ICON_RGB = [31, 111, 235]; // #1F6FEB
+/**
+ * 允许携带 Alpha 通道的图标位。依据 FR-brand-009：**应用级**图标（app_icon / icon / startIcon /
+ * product_logo_32）必须不带 Alpha（含 Alpha 会被应用市场驳回）；**窗口**图标（window_icon.png）
+ * 由 `../assets/logo.png` 生成、保留透明背景，属允许项。
+ */
+const ALPHA_ALLOWED_ICONS = new Set(['AppScope/resources/base/media/window_icon.png']);
 
 // ------------------------------------------------------------------ 参数
 
@@ -190,6 +207,8 @@ const args = parseArgs();
 const EXTRACT_ONLY = args.has('extract-only');
 const VERIFY_ONLY = args.has('verify-only');
 const RESOLVE_LIBCXX = !args.has('no-libcxx') && !VERIFY_ONLY;
+/** 允许回退生成纯色占位图标（仅首次导入取骨架；见 ensureAppIcons 的 FR-brand-010 说明） */
+const ALLOW_PLACEHOLDER_ICONS = args.has('allow-placeholder-icons');
 const RESOLVE_SQLITE = !args.has('no-sqlite') && !VERIFY_ONLY;
 const RELEASE_ZIP = resolve(args.get('release', DEFAULT_RELEASE));
 const RUNTIME_SOURCE = args.get('runtime-source', '');
@@ -226,19 +245,33 @@ function stage0() {
   return manifest;
 }
 
-/** 占位图标：仅缺失时生成，避免把二进制资源塞进仓库；合规要求纯色不透明（无 Alpha） */
+/**
+ * 包内图标的存在性门禁（FR-brand-010）。
+ *
+ * 自 2.0.26 起图标是**品牌物料生成物**（`scripts/lib/branding.mjs --generate-icons`，入库）。
+ * 因此缺文件**不再静默生成占位图**，而是硬失败并要求先跑品牌化图标生成 —— 「不得静默产出
+ * 无品牌 / 占位图标的包」。仅在首次导入取骨架时显式传 `--allow-placeholder-icons` 才回退生成。
+ */
 function ensureAppIcons() {
+  const missing = PLACEHOLDER_ICONS.map(([relPath]) => relPath).filter((relPath) => !exists(join(PROJECT_ROOT, relPath)));
+  if (missing.length === 0) return;
+  if (!ALLOW_PLACEHOLDER_ICONS) {
+    fail(
+      `包内图标缺失（${missing.length} 个）：\n  ${missing.join('\n  ')}\n` +
+        `  处置：先跑品牌化图标生成 node scripts/lib/branding.mjs --generate-icons` +
+        `（物料来自 ../assets/logo-1024-with-bg.png 与 ../assets/logo.png）。\n` +
+        `  首次导入取骨架时可显式传 --allow-placeholder-icons 回退为纯色占位图（绝不用于发布）。`,
+    );
+  }
   for (const [relPath, size] of PLACEHOLDER_ICONS) {
     const target = join(PROJECT_ROOT, relPath);
     if (exists(target)) continue;
-    const bytes = writeSolidPng(target, size, PLACEHOLDER_ICON_BYTES());
-    log(0, `生成占位图标 ${relPath}（${size}×${size}，纯色不透明，${bytes} B）—— 发布前必须替换为产品图标`);
+    const bytes = writeSolidPng(target, size, PLACEHOLDER_ICON_RGB);
+    warn(0, `生成占位图标 ${relPath}（${size}×${size}，纯色不透明，${bytes} B）—— 仅供首次导入取骨架，发布前必须替换为品牌图标`);
   }
 }
 
-function PLACEHOLDER_ICON_BYTES() {
-  return PLACEHOLDER_ICON_RGB;
-}
+const PLACEHOLDER_ICON_RGB = [31, 111, 235]; // #1F6FEB
 
 // ------------------------------------------------------------------ 阶段 1
 
@@ -331,7 +364,14 @@ function stage3Prune() {
 function stage4RestoreAppFiles() {
   banner(4, '恢复本应用 App 主进程文件');
   for (const [from, to] of APP_FILES) {
-    copyOne(join(PROJECT_ROOT, from), join(PROJECT_ROOT, to));
+    const dest = join(PROJECT_ROOT, to);
+    copyOne(join(PROJECT_ROOT, from), dest);
+    // 语法门禁：主进程脚本一旦解析失败，require 即抛错、main.js 整段不执行 ——
+    // 真机表现是「白屏 + 零日志」（console.error 也不入 hilog），极难定位，故在此 fail-visible 拦住。
+    if (dest.endsWith('.js')) {
+      const checked = run(process.execPath, ['--check', dest], { optional: true });
+      require_(checked.status === 0, `App 主进程脚本语法错误: ${to}\n${(checked.stderr || checked.stdout || '').trim()}`);
+    }
     log(4, `${from} → ${to}`);
   }
   const skills = join(PROJECT_ROOT, 'skills');
@@ -426,9 +466,48 @@ function stage9InjectNatives(manifest) {
     log(9, `libc++_shared.so → ${manifest.libcxx?.path ?? 'electron/libs/arm64-v8a/libc++_shared.so'}（${md5File(dest)}）`);
   }
 
-  // better_sqlite3.node 不在这里注入：它随运行时时序产物一起分发（<runtimeDir>/node_modules/better-sqlite3/
-  // 由 scripts/collect-opencode.mjs 物化）。原因是设备侧 .node 不能从 resfile 只读目录 dlopen，
-  // 而运行时时序产物解压到可写的 userData 沙箱，dsh 0.1.5 上架版本即用该布局（工程规划 §3.6）。
+  // better_sqlite3.node 双份投放（工程规划 §3.6 / spec 005 FR-005-009、spec 012 FR-012-012）：
+  //   ① <runtimeDir>/node_modules/better-sqlite3/（JS 包 + .node）：由 scripts/collect-opencode.mjs 物化；
+  //   ② 本阶段额外投放同名「dlopen 锚点」到 electron/libs/arm64-v8a/。
+  // 为什么必须有 ②：HarmonyOS 链接器命名空间（default/ndk/moduleNs_default）访问不到 app 的 files/ 沙箱，
+  //   真机实测从 userData（el2）dlopen 同样失败（MUSL-LDSO: check ns accessible failed，文件在但加载被拒）；
+  //   只有 HAP 的 libs/arm64-v8a（部署为 /data/storage/el1/bundle/libs/arm64/）可达 —— node_binding.cc 会先把
+  //   请求的 .node 按同名重试到该目录，因此同名锚点即可让 el2 包内的 require 命中。dsh 0.1.5 上架版本同此布局。
+  if (RESOLVE_LIBCXX) {
+    const anchorDest = join(PROJECT_ROOT, 'electron/libs/arm64-v8a/better_sqlite3.node');
+    const binding = locateBetterSqlite3Binding();
+    mkdirp(join(PROJECT_ROOT, 'electron/libs/arm64-v8a'));
+    copyOne(binding, anchorDest);
+    require_(
+      sha256File(anchorDest) === sha256File(binding),
+      `dlopen 锚点投放校验失败（sha256 不一致）: ${rel(PROJECT_ROOT, anchorDest)}`,
+    );
+    log(
+      9,
+      `dlopen 锚点 better_sqlite3.node → electron/libs/arm64-v8a/（${(fileSize(anchorDest) / 1024 / 1024).toFixed(1)} MB，sha256=${sha256File(anchorDest).slice(0, 16)}…）`,
+    );
+  }
+}
+
+/**
+ * 定位 aarch64-ohos 的 better_sqlite3.node。
+ * 与 scripts/collect-opencode.mjs 同一来源（v37 编译指导归档）与同一缓存目录，保证两份字节一致。
+ */
+function locateBetterSqlite3Binding() {
+  const candidates = findFiles(SQLITE_GUIDE_DIR, (name) => name.endsWith('.tar.gz'));
+  require_(
+    candidates.length > 0,
+    `未找到 better-sqlite3 归档（查找目录: ${SQLITE_GUIDE_DIR}）\n  设备无 node:sqlite binding，缺它则服务端起不来（工程规划 §3.6）。`,
+  );
+  const extractDir = join(PROJECT_ROOT, '.cache', 'better-sqlite3');
+  const binding = join(extractDir, 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node');
+  if (!isFile(binding)) {
+    mkdirp(extractDir);
+    runOrFail('tar', ['-xzf', candidates[0], '-C', extractDir]);
+  }
+  require_(isFile(binding), `better-sqlite3 归档中缺少原生模块: ${binding}`);
+  require_(isElfAarch64(binding), `better_sqlite3.node 不是 aarch64 ELF（ABI 必须与 Electron 37 一致）: ${binding}`);
+  return binding;
 }
 
 // ------------------------------------------------------------------ 阶段 10
@@ -528,12 +607,19 @@ function stage10Guards(manifest) {
     guard(isFile(p), `App 文件就位 ${to.replace(`${APP_RESFILE_DIR}/`, '')}`);
   }
 
-  // 10.11 原生注入：libc++ 由本脚本注入；better_sqlite3.node 随运行时时序产物分发
-  //（collect-opencode.mjs 阶段 ② 负责物化与守卫，故此处不检查 libs/ 下的 .node）
+  // 10.11 原生注入：libc++ 与 better_sqlite3.node 的 dlopen 锚点均由本脚本投放到 libs/arm64-v8a/
+  //（better_sqlite3 的 JS 包 + .node 另由 collect-opencode.mjs 阶段 ② 随运行时时序产物物化）
   const libcxxPath = join(PROJECT_ROOT, manifest.libcxx?.path ?? 'electron/libs/arm64-v8a/libc++_shared.so');
   guard(isFile(libcxxPath), `libc++_shared.so 就位（${manifest.libcxx?.path ?? 'electron/libs/arm64-v8a/libc++_shared.so'}）`);
 
-  // 10.12 图标合规（纯色不透明；含 Alpha 会被应用市场驳回）
+  // 10.11b dlopen 锚点：libs/ 下的同名 better_sqlite3.node（工程规划 §3.6 硬约束；缺失即真机白屏）
+  const sqliteAnchor = join(PROJECT_ROOT, 'electron/libs/arm64-v8a/better_sqlite3.node');
+  guard(
+    isFile(sqliteAnchor) && isElfAarch64(sqliteAnchor),
+    'dlopen 锚点就位 electron/libs/arm64-v8a/better_sqlite3.node',
+  );
+
+  // 10.12 图标合规（FR-brand-009：应用级图标不带 Alpha；window_icon 允许透明）
   for (const [relPath, size] of PLACEHOLDER_ICONS) {
     const p = join(PROJECT_ROOT, relPath);
     if (!isFile(p)) {
@@ -546,9 +632,13 @@ function stage10Guards(manifest) {
       continue;
     }
     const hasAlpha = header.colorType === 4 || header.colorType === 6;
-    guard(!hasAlpha, `图标不含 Alpha ${relPath}（colorType=${header.colorType}）`);
+    if (ALPHA_ALLOWED_ICONS.has(relPath)) {
+      log(10, `图标允许 Alpha（窗口图标）${relPath}（colorType=${header.colorType}）`);
+    } else {
+      guard(!hasAlpha, `图标不含 Alpha ${relPath}（colorType=${header.colorType}）`);
+    }
     guard(header.width === header.height && header.width >= 32, `图标为正方形 ${relPath}（${header.width}×${header.height}）`);
-    if (size === 1024) guard(header.width === 1024, `主图标为 1024×1024 ${relPath}`);
+    if (size !== 32) guard(header.width === size, `图标边长 ${size} ${relPath}（实际 ${header.width}）`);
   }
 
   if (failed > 0) fail(`一致性守卫 ${failed} 项未通过，已中止（旧壳 / 错 SO / 定制丢失 / 权限越界 / 合规风险）。`);

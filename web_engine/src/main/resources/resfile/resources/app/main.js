@@ -1,7 +1,7 @@
 /**
  * OC Desktop —— Electron 主进程（工程规划 §5「运行架构」）。
  *
- * 阶段：环境装配 → 产物就位 → 启动宿主 → 鉴权引导 → 建窗 → 加载内嵌 UI → 生命周期收尾。
+ * 阶段：环境装配 → 插件物化 → 产物就位 → 启动宿主 → 鉴权引导 → 建窗 → 加载内嵌 UI → 生命周期收尾。
  * 每个阶段都必须可观测（统一 [oc-desktop] 前缀日志 + loading 页阶段文本），禁止「卡住但不说」。
  *
  * 宿主形态三候选（工程规划 §3.2，由 Phase 0 P0-1 探针定标）：
@@ -23,13 +23,26 @@ const { pathToFileURL } = require('node:url');
 const { ensureExtracted, readMarker } = require('./tar-extract.js');
 
 const LOG = '[oc-desktop]';
-const log = (...args) => console.log(LOG, ...args);
+// [临时诊断] 真机上 console.error 不入 hilog：把日志与异常同时落盘（诊断取到结论后移除）
+const TRACE_FILE = '/data/storage/el2/base/files/ocr-trace.log';
+const trace = (level, args) => {
+  try {
+    fs.appendFileSync(TRACE_FILE, `${new Date().toISOString()} ${level} ${args.map((a) => (a && a.stack) || String(a)).join(' ')}\n`);
+  } catch {}
+};
+const log = (...args) => {
+  trace('LOG', args);
+  console.log(LOG, ...args);
+};
 const fail = (stage, error) => {
   const message = error && error.stack ? error.stack : String(error);
+  trace('FAIL', [`[${stage}]`, message]);
   console.error(`${LOG}[${stage}] 失败: ${message}`);
   globalThis.__ocError = { stage, message };
   return message;
 };
+process.on('uncaughtException', (error) => trace('UNCAUGHT_EXCEPTION', [error]));
+process.on('unhandledRejection', (reason) => trace('UNHANDLED_REJECTION', [reason]));
 
 /**
  * 阶段状态机（loading 页据此显示；fail-visible）。
@@ -37,6 +50,7 @@ const fail = (stage, error) => {
  */
 const STAGES = {
   ENV: '环境装配',
+  PLUGINS: '插件物化',
   ARTIFACT: '产物就位',
   HOST: '启动服务端宿主',
   AUTH: '鉴权引导',
@@ -55,6 +69,10 @@ const RUNTIME_DIR = path.join(APP_HOME, 'opencode-dist');
 const CACHE_DIR = path.join(APP_HOME, 'cache');
 const CONFIG_DIR = path.join(APP_HOME, 'config');
 const STATE_DIR = path.join(APP_HOME, 'state');
+/** 包内插件源码（resfile/resources/app/plugins，由 scripts/collect-app.mjs 投放） */
+const PACKAGED_PLUGINS_DIR = path.join(__dirname, 'plugins');
+/** 插件物化目标：XDG_CONFIG_HOME=<userData>/config ⇒ opencode 的全局配置目录为 <userData>/config/opencode */
+const PLUGIN_DIR = path.join(CONFIG_DIR, 'opencode', 'plugin');
 const CONNECTION_FILE = path.join(APP_HOME, 'ocr-connection.json');
 
 const HOST_MODE = process.env.OCR_HOST_MODE || 'inprocess'; // inprocess | utility | worker
@@ -115,11 +133,57 @@ function configureEnvironment() {
   log(`[${currentStage}] XDG_DATA_HOME=${DATA_DIR} TMPDIR=${TMP_DIR}`);
 }
 
+
+// ------------------------------------------------------------------ 阶段 1.5：插件物化
+
+/**
+ * 插件物化（工程规划 §3.9 / specs/102-harmony-js-tools FR-tool-016…019）。
+ *
+ * opencode 只扫描**配置目录**下的 `plugin/` 与 `plugins/`；包内 `resfile/resources/app/plugins/`
+ * 不在配置目录集合内，因此启动期必须 **copy** 到 `<userData>/config/opencode/plugin/<oc-plugin-name>/`。
+ *   - 禁 symlink：真机同域 `symlink` 报 EACCES（doc 能力清单 #5）；
+ *   - 幂等可重复：同名目标目录先删再写，避免旧版本文件残留；
+ *   - 失败可见：经 fail() 写日志 + globalThis.__ocError（loading 页/ArkTS 侧可读），**不阻塞**启动
+ *     （插件缺席只降级工具能力，不得回归「启动就绪 / 会话可建」）。
+ */
+function materializePlugins() {
+  currentStage = STAGES.PLUGINS;
+  if (!fs.existsSync(PACKAGED_PLUGINS_DIR)) {
+    fail(currentStage, new Error(`包内插件目录缺失: ${PACKAGED_PLUGINS_DIR}（请先运行 scripts/collect-app.mjs）`));
+    return;
+  }
+  const plugins = fs
+    .readdirSync(PACKAGED_PLUGINS_DIR, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  if (plugins.length === 0) {
+    fail(currentStage, new Error(`包内插件目录为空: ${PACKAGED_PLUGINS_DIR}`));
+    return;
+  }
+  let materialized = 0;
+  for (const name of plugins) {
+    const source = path.join(PACKAGED_PLUGINS_DIR, name);
+    const target = path.join(PLUGIN_DIR, name);
+    try {
+      fs.mkdirSync(PLUGIN_DIR, { recursive: true });
+      fs.rmSync(target, { recursive: true, force: true });
+      fs.cpSync(source, target, { recursive: true, force: true });
+      if (!fs.existsSync(path.join(target, 'index.js'))) throw new Error('物化后缺少 index.js');
+      materialized += 1;
+      log(`[${currentStage}] ${name} → ${target}`);
+    } catch (error) {
+      fail(currentStage, error);
+    }
+  }
+  log(`[${currentStage}] 完成：${materialized}/${plugins.length} 个插件已就位（${PLUGIN_DIR}）`);
+}
+
 // ------------------------------------------------------------------ 阶段 2：产物就位
 
-function bootstrapArtifact() {
+async function bootstrapArtifact() {
   currentStage = STAGES.ARTIFACT;
-  const result = ensureExtracted({
+  const result = await ensureExtracted({
     runtimeDir: RUNTIME_DIR,
     archive: process.env.OCR_DIST_ARCHIVE || null,
     onProgress: (message) => log(`[${currentStage}] ${message}`),
@@ -185,10 +249,15 @@ function startHost() {
     return Promise.reject(new Error(`服务端产物缺失: ${entry}（请先运行 scripts/build-opencode.mjs）`));
   }
   log(`[${currentStage}] 进程内加载 ${entry}`);
-  return import(pathToFileURL(entry).href).catch((error) => {
-    fail(currentStage, error);
-    throw error;
-  });
+  return import(pathToFileURL(entry).href)
+    .then((loaded) => {
+      trace('IMPORT_RESOLVED', [`exports=${Object.keys(loaded).length}`]);
+      return loaded;
+    })
+    .catch((error) => {
+      fail(currentStage, error);
+      throw error;
+    });
 }
 
 // ------------------------------------------------------------------ 阶段 4：鉴权引导
@@ -402,7 +471,8 @@ async function main() {
   await app.whenReady();
   configureEnvironment(); // app.getPath 在 ready 后才稳定，重复一次保证 HOME/XDG 指向 userData
 
-  bootstrapArtifact();
+  materializePlugins(); // 插件必须在服务端启动前就位（opencode 只在启动时做插件发现）
+  await bootstrapArtifact();
   await startHost();
   await waitForHealth();
   await bootstrapAuth();

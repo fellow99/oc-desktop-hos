@@ -34,9 +34,14 @@ function sha256File(file) {
 
 /**
  * 确保产物就位。
- * @returns {{ extracted: boolean, marker: string, dir: string, files: number }}
+ *
+ * ⚠️ 必须 await：extractTarGzSync 内部是流式解压（返回 Promise）。此前写成同步调用 + 立即写 marker，
+ * 真机实测得到「已解压（marker=新）→ 立刻报服务端产物缺失 → 11 秒后才真正解压完成」的一次性失败，
+ * 且 marker 已提前落盘，使下一次启动跳过解压。marker 只在解压「完成」后写。
+ *
+ * @returns {Promise<{ extracted: boolean, marker: string, dir: string, files: number }>}
  */
-function ensureExtracted(options) {
+async function ensureExtracted(options) {
   const archive = options.archive || path.join(__dirname, ARCHIVE_NAME);
   const runtimeDir = options.runtimeDir;
   const onProgress = options.onProgress || (() => {});
@@ -54,7 +59,7 @@ function ensureExtracted(options) {
   onProgress(`解压产物 → ${runtimeDir}（marker ${current ? current.slice(0, 12) : '无'} → ${expected.slice(0, 12)}）`);
   fs.rmSync(runtimeDir, { recursive: true, force: true });
   fs.mkdirSync(runtimeDir, { recursive: true });
-  const files = extractTarGzSync(archive, runtimeDir, { onProgress });
+  const files = await extractTarGzSync(archive, runtimeDir, { onProgress });
   fs.writeFileSync(path.join(runtimeDir, MARKER_NAME), `${expected}\n`);
   return { extracted: true, marker: expected, dir: runtimeDir, files };
 }
