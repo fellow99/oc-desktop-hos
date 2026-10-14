@@ -88,16 +88,29 @@
     且出现物料 path 数据。保留原 viewBox：上游 CSS 只给该槽位 `width:160px`，把 viewBox 换成正方形会把它
     从约 29px 顶到 160px，破坏首屏布局；物料按等比缩放居中放入（`translate((720-129)/2, 0) scale(129/1024)`）。
     替换边界取**模板字面量的结束反引号**而非 `</svg>` —— 上游压缩器省略了该片段的结束标签。
+
+- **FR-brand-017**（MUST，2026-10-14 新增）：**新建会话页大字标**必须品牌化。落点：
+  `data-component=new-session-wordmark` 内那个 `viewBox "0 0 234 42"` 的 SVG —— 上游把它实现成
+  **8 个字母的矢量字形**（拼出 `opencode`；在无障碍树里既非文本、也无业务 id，只有真机 DOM 探针能定位）。
+  判据：该片段换成文字 `OC Desktop`（产物中出现 `>OC Desktop</text>`），且上游最后一笔字形 path 消失
+  （`M216 12V18H228V12H216ZM234 24H216V30H234V36H210V6H234V24Z`）。匹配边界取
+  「起始标记 + 上游最后一笔 path 到它的 `>`」—— 上游压缩器**同样省略了 `</g></svg>`，不能用闭合标签定位。
 - **FR-brand-008**（MUST）：包内**每一个被引用的图标位**必须来自同一物料：`AppScope/.../app_icon.png`、
-  `icon.png`、`startIcon.png`、`window_icon.png`、`product_logo_32.png`，以及 electron 模块实际投放的
-  `$media:app_icon` / `$media:startIcon`。
-- **FR-brand-009**（MUST）：应用级不透明图标（`app_icon` / `startIcon` / `icon` / `product_logo_32`）必须为
-  **1024×1024 或对应尺寸且不带 alpha 通道**；窗口图标（`window_icon`）允许透明。
+  `icon.png`、`startIcon.png`、`window_icon.png`、`product_logo_32.png`，electron 模块实际投放的
+  `$media:app_icon` / `$media:startIcon`，以及 **UI 内的应用图标**
+  `_assets/64x64-D8-3fHil.png`（真机 DOM 探针实测：首页左上角 20×20 显示的就是它，上游给的是蓝底
+  `opencode` 图标）。图标物料的实际来源自 2026-10-14 起为**入库透明位图** `assets/brand/*-transparent.png`
+  （由 `scripts/make-brand-materials.mjs` 从父工程 `logo.svg` 栅格化，并与 `logo.png` 逐像素校对）。
+- **FR-brand-009**（MUST，**2026-10-14 修订**）：5 个图标位（`app_icon` / `startIcon` / `icon` /
+  `product_logo_32` / `window_icon`）尺寸必须为 **1024/512/512/32/200**，且**全部保留 Alpha**。
+  修订理由：原口径要求应用级图标不带 Alpha（依据「含 Alpha 会被应用市场驳回」），但白底母版在真机上
+  表现为「白方块 + 橙环」（图案里的白色部分与白底融合），用户判定不可接受并要求改用透明底的 `logo.png`。
+  **残留风险如实登记**：应用市场是否接受带 Alpha 的应用图标**未验证**；若被驳回，回退方案见 R9。
 - **FR-brand-010**（MUST）：物料**缺失或不可解析**时构建**必须硬失败**并给出明确指引（不得静默产出占位图标）。
 - **FR-brand-011**（MUST）：图标生成必须**幂等且确定性**（同一物料 → 同一字节），生成物入库一次，
   保证重复构建不污染工作树。
 - **FR-brand-012**（MUST NOT）：**不得**删除 `collect-runtime` 的图标合规守卫；品牌图标必须同样通过
-  「1024² 且无 alpha」的断言。
+  「边长正确 + Alpha 与 `ALPHA_ALLOWED_ICONS` 一致」的断言（2026-10-14 起允许全部 5 个图标位带 Alpha）。
 
 ### 4.3 上游零改动与不回归
 
@@ -137,11 +150,13 @@
 | R2 | 上游 UI 升级后品牌引用点漂移 → 品牌化静默失效 | 后置断言：产物中必须出现 `OC Desktop`，且 `<title>` 必须命中；引用点缺失即失败 |
 | R3 | 归档解码/重编码破坏 UI（brotli 质量、索引顺序） | 重编码保持 `AppArchive.encode` 的格式与 brotli quality 11；`smoke-node22` 门禁断言「内嵌 UI 可取回」；解压后文件数与原始一致（仅内容变化） |
 | R4 | 物料在**父工程**（本仓外）→ 干净 checkout 无法构建 | 文档显式登记前置；缺失即硬失败（FR-brand-010） |
-| R5 | 把 200² 位图放大当大图标 → 模糊 | ≥512 与不透明图标一律用 1024² 母版 `logo-1024-with-bg.png`；UI 内联用矢量 `logo.svg` |
+| R5 | 把 200² 位图放大当大图标 → 模糊 | 不再使用位图放大：入库位图由**矢量** `logo.svg` 按目标尺寸栅格化（`scripts/make-brand-materials.mjs`），因此每个尺寸都是原生渲染（2026-10-14 修订） |
 | R6 | 生成图标污染工作树 |
 修复：生成参数固定（scale + format），生成物**入库**；AC-10 断言幂等 |
 | R7 | electron 模块图标由运行时发行版投放，本工程无法覆盖 | 用 `runtime-overlays/` 白名单扩展（electron 模块 media）并在 `collect-runtime` 守卫中登记 |
 | R8 | 产品上架审核把「AI 生成内容」与品牌混同 | 界面保留上游 AI 生成内容标识（本需求不动该标识） |
+| R9 | 带 Alpha 的应用图标被应用市场驳回 | 未验证。回退方案：把 `logo.svg` 图案压在**深色底**或**品牌橙 `#db9612` 底**上重新生成入库位图（保持无 Alpha），只需改 `make-brand-materials.mjs` 的合成步骤 + 复原 `ALPHA_ALLOWED_ICONS` |
+| R10 | 父工程 `logo.svg` 变更后忘记重跑生成脚本 → 图标与 logo 不一致 | `loadMaterial` 每构建断言「入库 200px 位图与父工程 `logo.png` **逐像素一致**」，不一致即硬失败并提示重跑脚本 |
 
 ## 7. 不做
 

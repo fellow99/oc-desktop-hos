@@ -181,8 +181,8 @@ const JIT_PERMISSION = 'ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY';
 /**
  * 包内图标位（上架合规 §8.5 G2；尺寸与 alpha 规则见 specs/103-branding/spec.md FR-brand-009）。
  *
- * 自 2.0.26 起，这 5 个文件由 `scripts/lib/branding.mjs --generate-icons` 从**父工程物料**
- * `../assets/{logo-1024-with-bg.png,logo.png}` 生成并入库；本表的 `size` 是**必须**满足的边长。
+ * 自 2.0.26 起，这 5 个文件由 `scripts/lib/branding.mjs --generate-icons` 从入库透明位图
+ * `assets/brand/*-transparent.png` 生成并入库；本表的 `size` 是**必须**满足的边长。
  *
  * `ensureAppIcons()` 不再静默兜底：文件缺失即硬失败（FR-brand-010「不得静默产出无品牌/占位图标的包」），
  * 只有显式传 `--allow-placeholder-icons` 才允许生成纯色占位图（仅用于首次导入取骨架）。
@@ -195,11 +195,21 @@ const PLACEHOLDER_ICONS = [
   ['AppScope/resources/base/media/window_icon.png', 200],
 ];
 /**
- * 允许携带 Alpha 通道的图标位。依据 FR-brand-009：**应用级**图标（app_icon / icon / startIcon /
- * product_logo_32）必须不带 Alpha（含 Alpha 会被应用市场驳回）；**窗口**图标（window_icon.png）
- * 由 `../assets/logo.png` 生成、保留透明背景，属允许项。
+ * 允许携带 Alpha 通道的图标位。
+ *
+ * **2026-10-14 口径变更（FR-brand-009 修订）**：原先只允许 `window_icon.png`，其余应用级图标必须
+ * 不带 Alpha（当时的依据是「含 Alpha 会被应用市场驳回」）。真机上白底母版表现为「白方块 + 橙环」，
+ * 用户判定不可接受并要求改用透明底的 `logo.png` ⇒ 5 个图标位**全部保留 Alpha**。
+ * 残留风险：带 Alpha 的应用图标能否通过应用市场审核**未经证实**；若被驳回，回退方案见
+ * specs/103-branding/spec.md R6（把图案压在深色或品牌色底上，仍保持无 Alpha）。
  */
-const ALPHA_ALLOWED_ICONS = new Set(['AppScope/resources/base/media/window_icon.png']);
+const ALPHA_ALLOWED_ICONS = new Set([
+  'AppScope/resources/base/media/app_icon.png',
+  'AppScope/resources/base/media/icon.png',
+  'AppScope/resources/base/media/startIcon.png',
+  'AppScope/resources/base/media/product_logo_32.png',
+  'AppScope/resources/base/media/window_icon.png',
+]);
 
 // ------------------------------------------------------------------ 参数
 

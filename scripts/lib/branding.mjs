@@ -30,6 +30,24 @@ export const BRAND_NAME = 'OC Desktop';
 export const UPSTREAM_BRAND = 'OpenCode';
 
 /**
+ * 本仓**入库的透明品牌位图**目录（2026-10-14 需求变更后成为图标物料的实际来源）。
+ * 由 `scripts/make-brand-materials.mjs` 从父工程 `logo.svg` 栅格化而来；构建期只消费、不重生成
+ * （因此构建不依赖本机 Chromium）。与父工程 `logo.png` 的像素一致性由 `loadMaterial` 断言把关。
+ */
+export const DEFAULT_BRAND_MATERIAL_DIR = resolve(PROJECT_ROOT, 'assets', 'brand');
+
+/** 入库位图清单（文件名即尺寸标注；全部保留 Alpha） */
+export const BRAND_RASTERS = [
+  'logo-1024-transparent.png',
+  'logo-512-transparent.png',
+  'logo-200-transparent.png',
+  'logo-192-transparent.png',
+  'logo-180-transparent.png',
+  'logo-64-transparent.png',
+  'logo-32-transparent.png',
+];
+
+/**
  * 保护清单（FR-brand-005）：**不得**被品牌化改写。
  * 上游真实服务名 / 商标归属声明 / 域名 —— 改成自家品牌属于事实错误与法律风险。
  */
@@ -65,6 +83,15 @@ export const TECHNICAL_MARKERS = [
 /** 上游连接页矢量字标（viewBox `0 0 720 129`）的特征 path —— 品牌化后必须消失 */
 const UPSTREAM_WORDMARK_PATH = 'M55.3846 36.4286H18.4615V91.7143H55.3846V36.4286ZM73.8462 110.143H0V18H73.8462V110.143Z';
 
+/**
+ * 上游「新建会话页大字标」的最后一笔字形路径（viewBox `0 0 234 42`，8 个字母的最后一笔，唯一）。
+ * 品牌化后必须消失；用它定位该 SVG 的结束位置（上游压缩器省略了 `</g></svg>`）。
+ */
+const UPSTREAM_NEW_SESSION_WORDMARK_LAST_PATH = 'M216 12V18H228V12H216ZM234 24H216V30H234V36H210V6H234V24Z';
+
+/** 上游「新建会话页大字标」第一笔字形路径（用于断言品牌化后确实消失） */
+export const UPSTREAM_NEW_SESSION_WORDMARK_FIRST_PATH = 'M18 30H6V18H18V30Z';
+
 /** 上游内联 Logo（`data-component=opencode-logo`）的特征 path —— 品牌化后必须消失 */
 export const UPSTREAM_INLINE_LOGO_PATH = 'M11.1999 12.8H4.79993V6.40002H11.1999V12.8Z';
 
@@ -83,27 +110,38 @@ export const ARCHIVE_ICON_ASSETS = {
   'icons/dev/apple-touch-icon.png': 'apple-touch-icon.png',
   'icons/dev/web-app-manifest-192x192.png': 'web-app-manifest-192x192.png',
   'icons/dev/web-app-manifest-512x512.png': 'web-app-manifest-512x512.png',
+  // 真机 DOM 探针实测（2026-10-14）：首页左上角那个图标就是这个资产
+  // （`<img class="shrink-0 rounded-[4px] shadow-[var(--v2-elevation-raised)] size-5" src="/_assets/64x64-*.png">`），
+  // 上游给的是**蓝底白字 opencode 图标**，必须换成自家品牌。
+  '_assets/64x64-D8-3fHil.png': 'app-64.png',
 };
 
 /** 由物料生成的 UI 图标（archive 替换与断言共用同一份字节） */
 export const WEB_ICON_SPECS = [
   { name: 'favicon.ico', kind: 'copy', from: 'ico' },
   { name: 'favicon.svg', kind: 'copy', from: 'svg' },
-  { name: 'apple-touch-icon.png', kind: 'png', source: 'master', size: 180, alpha: false },
-  { name: 'web-app-manifest-192x192.png', kind: 'png', source: 'master', size: 192, alpha: false },
-  { name: 'web-app-manifest-512x512.png', kind: 'png', source: 'master', size: 512, alpha: false },
+  { name: 'apple-touch-icon.png', kind: 'brand', from: 'logo-180-transparent.png', size: 180 },
+  { name: 'web-app-manifest-192x192.png', kind: 'brand', from: 'logo-192-transparent.png', size: 192 },
+  { name: 'web-app-manifest-512x512.png', kind: 'brand', from: 'logo-512-transparent.png', size: 512 },
+  // UI 内的应用图标（真机实测：`<img src="/_assets/64x64-*.png">`，首页左上角按 20×20 显示）——
+  // 上游给的是蓝底 opencode 图标，必须换成自家品牌（2026-10-14 需求）。
+  { name: 'app-64.png', kind: 'brand', from: 'logo-64-transparent.png', size: 64 },
 ];
 
-/** AppScope 应用/窗口图标（FR-brand-008/009）：应用级一律去 alpha，窗口图标保留 alpha */
+/**
+ * AppScope 应用/窗口图标（FR-brand-008/009）。
+ * **2026-10-14 需求变更**：应用级图标原先要求「不带 alpha」（白底母版），真机表现是「白方块」，
+ * 用户判定不可接受 ⇒ 改为**保留透明**的入库位图（`assets/brand/*-transparent.png`）：
+ * 图案与父工程 `logo.png` 一致（橙 + 白），不再有白色底块。
+ * 代价（如实登记）：与 specs/103-branding FR-brand-009 的旧口径相反，应用市场是否接受带 Alpha 的
+ * 应用图标**未验证**，若被驳回需回退到「压深色/品牌色底」的方案（见该 spec 的 R6）。
+ */
 export const APP_ICON_TARGETS = [
-  { path: 'AppScope/resources/base/media/app_icon.png', source: 'master', size: 1024, alpha: false },
-  { path: 'AppScope/resources/base/media/icon.png', source: 'master', size: 512, alpha: false },
-  { path: 'AppScope/resources/base/media/startIcon.png', source: 'master', size: 512, alpha: false },
-  { path: 'AppScope/resources/base/media/product_logo_32.png', source: 'master', size: 32, alpha: false },
-  // 窗口图标保留透明：唯一带透明的物料是 `../assets/logo.png`（200×200）。按 1:1 取用，**不做放大**
-  // （specs/103-branding/spec.md R5：把 200² 位图放大到 ≥512 会发虚）。200² 与兄弟工程 pi-desktop-hos
-  // 真机验证过的 `window_icon` 尺寸一致。
-  { path: 'AppScope/resources/base/media/window_icon.png', source: 'window', size: 200, alpha: true },
+  { path: 'AppScope/resources/base/media/app_icon.png', from: 'logo-1024-transparent.png', size: 1024, alpha: true },
+  { path: 'AppScope/resources/base/media/icon.png', from: 'logo-512-transparent.png', size: 512, alpha: true },
+  { path: 'AppScope/resources/base/media/startIcon.png', from: 'logo-512-transparent.png', size: 512, alpha: true },
+  { path: 'AppScope/resources/base/media/product_logo_32.png', from: 'logo-32-transparent.png', size: 32, alpha: true },
+  { path: 'AppScope/resources/base/media/window_icon.png', from: 'logo-200-transparent.png', size: 200, alpha: true },
 ];
 
 /** 归档内被当作文本处理的后缀（白名单：新类型不会被误当二进制乱码重编码） */
@@ -386,11 +424,10 @@ export function parseSvgPaths(svgText, label = '<svg>') {
 }
 
 /** 载入父工程物料；缺失/不可解析一律硬失败并给出明确指引（FR-brand-010） */
-export function loadMaterial(materialDir = DEFAULT_MATERIAL_DIR) {
+export function loadMaterial(materialDir = DEFAULT_MATERIAL_DIR, brandDir = DEFAULT_BRAND_MATERIAL_DIR) {
   const files = {
-    '不透明母版（应用/启动/产品图标）': join(materialDir, 'logo-1024-with-bg.png'),
-    '带透明窗口图标源': join(materialDir, 'logo.png'),
-    '矢量 Logo': join(materialDir, 'logo.svg'),
+    '透明 Logo 位图（与入库位图做一致性校验）': join(materialDir, 'logo.png'),
+    '矢量 Logo（入库位图的来源）': join(materialDir, 'logo.svg'),
     'favicon.ico': join(materialDir, 'logo.ico'),
   };
   for (const [role, path] of Object.entries(files)) {
@@ -398,23 +435,50 @@ export function loadMaterial(materialDir = DEFAULT_MATERIAL_DIR) {
       isFile(path),
       `品牌物料缺失（${role}）: ${path}\n` +
         '  父工程物料目录必须存在（FR-brand-010：缺失即硬失败，绝不回退占位图标）。\n' +
-        '  期望目录内容: logo.png / logo.svg / logo-1024-with-bg.png / logo.ico。',
+        '  期望目录内容: logo.png / logo.svg / logo.ico（`logo-1024-with-bg.png` 自 2026-10-14 起不再使用）。',
     );
   }
-  const master = decodePng(readFileSync(files['不透明母版（应用/启动/产品图标）']), files['不透明母版（应用/启动/产品图标）']);
+  const windowSource = decodePng(readFileSync(files['透明 Logo 位图（与入库位图做一致性校验）']), files['透明 Logo 位图（与入库位图做一致性校验）']);
+  const svgText = readFileSync(files['矢量 Logo（入库位图的来源）'], 'utf8');
+
+  // 入库透明位图（图标物料的实际来源）。缺失即硬失败并指向生成脚本。
+  const brand = new Map();
+  for (const name of BRAND_RASTERS) {
+    const path = join(brandDir, name);
+    require_(
+      isFile(path),
+      `入库品牌位图缺失: ${path}\n` +
+        '  由 `node scripts/make-brand-materials.mjs` 从父工程 `logo.svg` 生成（需要本机 Chromium）。',
+    );
+    brand.set(name, decodePng(readFileSync(path), path));
+  }
+
+  // 漂移守卫：入库的 200px 位图必须与父工程 `logo.png` **逐像素一致**。
+  // 父工程换了 logo 却忘了重跑生成脚本时，这里立刻硬失败，而不是静默用旧图案出包。
+  const stored200 = brand.get('logo-200-transparent.png');
   require_(
-    master.width === 1024 && master.height === 1024,
-    `母版 logo-1024-with-bg.png 必须是 1024×1024（实际 ${master.width}×${master.height}）——大尺寸与不透明图标只允许用它（避免位图放大发虚）`,
+    stored200.width === windowSource.width && stored200.height === windowSource.height,
+    `入库位图与父工程 logo.png 尺寸不一致：${stored200.width}×${stored200.height} vs ${windowSource.width}×${windowSource.height}——请重跑 node scripts/make-brand-materials.mjs`,
   );
-  const windowSource = decodePng(readFileSync(files['带透明窗口图标源']), files['带透明窗口图标源']);
-  const svgText = readFileSync(files['矢量 Logo'], 'utf8');
+  let drift = 0;
+  for (let index = 0; index < stored200.rgba.length; index += 1) {
+    drift += Math.abs(stored200.rgba[index] - windowSource.rgba[index]);
+  }
+  require_(
+    drift === 0,
+    `入库品牌位图与父工程 logo.png 不一致（平均绝对差 ${(drift / stored200.rgba.length).toFixed(2)}）——` +
+      '父工程物料已变更，请重跑 node scripts/make-brand-materials.mjs 后重新构建',
+  );
+
   return {
     dir: materialDir,
-    master,
+    brandDir,
+    brand,
+    master: windowSource, // 兼容旧调用点：不再有不透明母版，统一指向透明位图
     window: windowSource,
     svgText,
     ico: readFileSync(files['favicon.ico']),
-    svgPaths: parseSvgPaths(svgText, files['矢量 Logo']),
+    svgPaths: parseSvgPaths(svgText, files['矢量 Logo（入库位图的来源）']),
   };
 }
 
@@ -431,17 +495,14 @@ export function buildWebIcons(material, materialDir) {
       icons.set(spec.name, source.ico);
       continue;
     }
-    const from = spec.source === 'master' ? source.master : source.window;
-    const scaled = resizeRgba(from, spec.size, spec.size);
-    icons.set(
-      spec.name,
-      encodePng({
-        width: spec.size,
-        height: spec.size,
-        channels: spec.alpha ? 4 : 3,
-        data: spec.alpha ? scaled.rgba : stripAlpha(scaled.rgba),
-      }),
+    // kind === 'brand'：直接取入库的透明位图（已按目标尺寸栅格化，无需再缩放）
+    const raster = source.brand.get(spec.from);
+    require_(Boolean(raster), `UI 图标 ${spec.name} 引用了不存在的入库位图：${spec.from}`);
+    require_(
+      raster.width === spec.size && raster.height === spec.size,
+      `入库位图 ${spec.from} 尺寸应为 ${spec.size}（实际 ${raster.width}×${raster.height}）`,
     );
+    icons.set(spec.name, encodePng({ width: spec.size, height: spec.size, channels: 4, data: raster.rgba }));
   }
   return icons;
 }
@@ -452,13 +513,17 @@ export function generateAppIcons(options = {}) {
   const root = options.projectRoot ?? PROJECT_ROOT;
   const results = [];
   for (const target of APP_ICON_TARGETS) {
-    const from = target.source === 'master' ? material.master : material.window;
-    const scaled = resizeRgba(from, target.size, target.size);
+    const raster = material.brand.get(target.from);
+    require_(Boolean(raster), `应用图标 ${target.path} 引用了不存在的入库位图：${target.from}`);
+    require_(
+      raster.width === target.size && raster.height === target.size,
+      `入库位图 ${target.from} 尺寸应为 ${target.size}（实际 ${raster.width}×${raster.height}）`,
+    );
     const bytes = encodePng({
       width: target.size,
       height: target.size,
       channels: target.alpha ? 4 : 3,
-      data: target.alpha ? scaled.rgba : stripAlpha(scaled.rgba),
+      data: target.alpha ? raster.rgba : stripAlpha(raster.rgba),
     });
     const absolute = join(root, target.path);
     const current = isFile(absolute) ? readFileSync(absolute) : null;
@@ -649,6 +714,49 @@ export function brandWordmark(text, svgPaths) {
   return { text: text.slice(0, start) + replacement + text.slice(close), replaced: true };
 }
 
+/**
+ * 新建会话页的大字标（`data-component=new-session-wordmark`）→ 文字 "OC Desktop"。
+ *
+ * 上游把这个字标实现成 **8 个字母的矢量字形**（viewBox `0 0 234 42`，字母 o/p/e/n/c/o/d/e 每 24 单位一个），
+ * 因此在 a11y 树里既不是文本、也没有可业务化的 id —— 真机 DOM 探针才定位到
+ * （见 `docs/鸿蒙环境能力清单-v2.0.26.md` §12）。用户要求把它换成文字 "OC Desktop"。
+ *
+ * 匹配方式：锚定 `<svg ... viewBox="0 0 234 42" ...><g>` 起始标记 + 上游**最后一笔**的字形路径 `d`
+ * （唯一），再补到该 path 的 `>` 为止 —— 上游压缩器**省略了 `</g></svg>`**，所以不能用闭合标签定位。
+ * 任何一处锚点缺失即视为「上游结构已变」：不替换，并让断言把它暴露出来（绝不盲目替换）。
+ */
+export function brandNewSessionWordmark(text) {
+  const quote = String.fromCharCode(34);
+  const startMarker = '<svg xmlns=http://www.w3.org/2000/svg ' + 'viewBox=' + quote + '0 0 234 42' + quote;
+  const marker = text.indexOf(startMarker);
+  if (marker === -1) return { text, replaced: false };
+  const group = text.indexOf('<g>', marker);
+  require_(group !== -1, '新建会话字标缺少 <g> 起始（上游 UI 结构已变），拒绝替换');
+  const lastLetter = text.indexOf('d=' + quote + UPSTREAM_NEW_SESSION_WORDMARK_LAST_PATH + quote, group);
+  require_(lastLetter !== -1, '新建会话字标缺少上游最后一笔路径（上游 UI 结构已变），拒绝替换');
+  const end = text.indexOf('>', lastLetter);
+  require_(end !== -1, '新建会话字标路径未闭合（上游 UI 结构已变），拒绝替换');
+  const region = text.slice(marker, end + 1);
+  require_(
+    !region.includes('${'),
+    '新建会话字标片段含模板插值（上游 UI 结构已变）：整体替换会丢掉动态绑定，拒绝替换',
+  );
+  const attribute = (name, value) => name + '=' + quote + value + quote;
+  const replacement =
+    '<svg xmlns=' + quote + 'http://www.w3.org/2000/svg' + quote + ' ' +
+    attribute('viewBox', '0 0 234 42') +
+    ' fill=' + quote + 'none' + quote +
+    '><g><text ' +
+    attribute('x', '117') +
+    attribute('y', '33') +
+    attribute('text-anchor', 'middle') +
+    attribute('font-size', '34') +
+    attribute('font-weight', '600') +
+    attribute('fill', 'var(--icon-base)') +
+    '>' + BRAND_NAME + '</text></g></svg>';
+  return { text: text.slice(0, marker) + replacement + text.slice(end + 1), replaced: true };
+}
+
 export function transformArchive(bytes, options = {}) {
   const material = options.material ?? loadMaterial(options.materialDir);
   const icons = options.icons ?? buildWebIcons(material);
@@ -703,7 +811,11 @@ export function transformArchive(bytes, options = {}) {
     if (logo.replaced) stats.logoAssets.push(key);
     const wordmark = brandWordmark(withLogo, material.svgPaths);
     if (wordmark.replaced) stats.wordmarkAssets.push(key);
-    const next = wordmark.replaced ? wordmark.text : withLogo;
+    // 新建会话页的大字标（`data-component=new-session-wordmark`，上游是 8 个字母矢量字形 "opencode"）
+    // → 换成文字 "OC Desktop"（2026-10-14 需求）。
+    const sessionWordmark = brandNewSessionWordmark(wordmark.replaced ? wordmark.text : withLogo);
+    if (sessionWordmark.replaced) stats.sessionWordmarkAssets = [...(stats.sessionWordmarkAssets ?? []), key];
+    const next = sessionWordmark.replaced ? sessionWordmark.text : wordmark.replaced ? wordmark.text : withLogo;
     if (key === 'index.html') stats.titleAfter = /<title>([^<]*)<\/title>/.exec(next)?.[1] ?? null;
     addCounts(stats.protectedAfter, next, PROTECTED_SUBSTRINGS);
     addCounts(stats.technicalAfter, next, TECHNICAL_MARKERS);
@@ -717,6 +829,11 @@ export function transformArchive(bytes, options = {}) {
     stats.wordmarkAssets.length > 0,
     `归档中未找到连接页矢量字标（viewBox 0 0 720 129）——品牌引用点漂移，构建必须失败。` +
       `若上游确实移除了该字标，请同步更新 assertArchiveBranded 与 specs/103-branding/spec.md`,
+  );
+  require_(
+    (stats.sessionWordmarkAssets ?? []).length > 0,
+    '归档中未找到新建会话页大字标（viewBox 0 0 234 42，data-component=new-session-wordmark）——' +
+      '品牌引用点漂移，构建必须失败。若上游确实移除了该字标，请同步更新 assertArchiveBranded 与 specs/103-branding/spec.md',
   );
   const branded = encodeArchive(entries.map(([key, raw]) => [key, compressEntry(raw)]));
   stats.entriesAfter = Object.keys(decodeArchive(branded, '<branded>').index).length;
@@ -846,6 +963,26 @@ export function assertArchiveBranded(bytes, options = {}) {
     `探针: ${material.svgPaths[0]?.d.slice(0, 24)}…`,
   );
   add('上游 720×129 字标几何已消失', !wordmarkText.includes(UPSTREAM_WORDMARK_PATH), UPSTREAM_WORDMARK_PATH.slice(0, 48));
+
+  // 新建会话页大字标（2026-10-14 需求）：上游 8 字母 "opencode" 字形必须消失，且换成 "OC Desktop"
+  const sessionWordmarkKeys = keys.filter((key) =>
+    (rawOf[key]?.toString('utf8') ?? '').includes('data-component=new-session-wordmark'),
+  );
+  const sessionText = sessionWordmarkKeys
+    .concat(keys.filter((key) => (rawOf[key]?.toString('utf8') ?? '').includes('viewBox="0 0 234 42"')))
+    .map((key) => rawOf[key].toString('utf8'))
+    .join('\n');
+  add('新建会话字标资产存在（viewBox 0 0 234 42）', sessionText.includes('viewBox="0 0 234 42"'), `${sessionWordmarkKeys.length} 个容器资产`);
+  add(
+    `新建会话字标已换成 ${BRAND_NAME} 文本`,
+    sessionText.includes('>' + BRAND_NAME + '</text>'),
+    `探针: >${BRAND_NAME}</text>`,
+  );
+  add(
+    '上游 234×42 字标最后一笔几何已消失',
+    !sessionText.includes(UPSTREAM_NEW_SESSION_WORDMARK_LAST_PATH),
+    UPSTREAM_NEW_SESSION_WORDMARK_LAST_PATH.slice(0, 40),
+  );
 
   // AC-05/AC-07 归档内图标与物料生成物逐字节一致
   for (const [key, iconName] of Object.entries(ARCHIVE_ICON_ASSETS)) {
