@@ -350,6 +350,13 @@ function pickLanAddress() {
  *   本来就不可能是合法值，因此该还原是**有原则的**，不会把真实数据误判为 NULL；
  *   其它列（例如可空的 INTEGER 时间戳）不做猜测，保持原值（已在能力清单登记为已知偏差）。
  *   根因修复仍应由发行侧重编/更换该 `.node`（仓库内 `better-sqlite3编译指南.md` + headers 已备）。
+ *   覆盖范围（如实登记）：只包 `Statement.prototype.all` —— 服务端数据路径（`#sqlite` 的 ohos
+ *   变体）只有 `all`/`run`，真机 `GET /api/project`、`POST /api/session` 都走 `all`；
+ *   `get()` / `iterate()` **未覆盖**（TUI 编辑器的 `#zed-sqlite` 走 `get`，本工程设备上无终端，
+ *   该面不启用）。若将来在设备上启用 TUI 编辑器，这里需要一并覆盖。
+ *   形态限制：只在**本进程**生效（`OCR_HOST_MODE=utility`/`worker` 时服务端跑在 `sidecar.js`
+ *   子进程/worker 里，本补丁不随过去），因此那两个宿主形态下 NULL 缺陷仍会复现 ——
+ *   已登记为已知限制（默认与已验证形态是 `inprocess`）。
  */
 function patchBetterSqlite3NullBug() {
   const candidates = [
@@ -357,16 +364,28 @@ function patchBetterSqlite3NullBug() {
     path.join(RUNTIME_DIR, 'node_modules', 'better-sqlite3'),
     'better-sqlite3',
   ].filter(Boolean);
+  // 取候选导出的构造函数：目录形态导出构造函数本身，而 env 直接指向 `.node` 时拿到的是
+  // 原生 addon 的导出对象（`{ Database }` / `{ default }`）—— 后者必须在**同一个循环内**归一化，
+  // 否则「首次 require 成功」就 break 会让自检在拿到非构造函数时静默放弃（日志还会误导成
+  // 「未能加载 better-sqlite3」），NULL 兜底就不生效了。
+  const asConstructor = (loaded) => {
+    if (typeof loaded === 'function') return loaded;
+    if (loaded && typeof loaded === 'object') {
+      if (typeof loaded.Database === 'function') return loaded.Database;
+      if (typeof loaded.default === 'function') return loaded.default;
+    }
+    return null;
+  };
   let Database = null;
   for (const specifier of candidates) {
     try {
-      Database = require(specifier);
-      break;
+      Database = asConstructor(require(specifier));
     } catch {
-      // 继续试下一个候选（env 可能直接指向 .node，或模块不在运行时树里）
+      Database = null;
     }
+    if (Database) break;
   }
-  if (typeof Database !== 'function') {
+  if (!Database) {
     log('[依赖兜底] 未能加载 better-sqlite3，跳过 NULL 缺陷自检');
     return;
   }
@@ -393,15 +412,38 @@ function patchBetterSqlite3NullBug() {
     return;
   }
 
-  let reported = false;
-  let conversions = 0;
+  const patchStats = {
+    calls: 0,
+    conversions: 0,
+    columnsLen: null,
+    touched: new Set(),
+    firstRowLogged: false,
+    degenerateLogged: false,
+  };
 
-  const patchStats = { calls: 0, conversions: 0, columnsLen: null, touched: new Set(), firstRowLogged: false };
-
+  const seen = new WeakSet();
   const applyNullFix = (DatabaseClass) => {
-    const Klass = DatabaseClass && DatabaseClass.prototype && DatabaseClass.prototype.prepare
-      ? DatabaseClass.prototype.prepare.call(new DatabaseClass(':memory:'), 'SELECT 1').constructor
-      : null;
+    if (typeof DatabaseClass !== 'function') return;
+    // 幂等 + 不重复建内存库：探测用的 `new DatabaseClass(':memory:')` 必须能取到拥有 `prepare`
+    // 的那个构造函数才有意义，且**必须 close**（此前每次 require 都会泄漏一个连接与一条语句）。
+    if (seen.has(DatabaseClass)) return;
+    seen.add(DatabaseClass);
+    let Klass = null;
+    let probe = null;
+    try {
+      probe = new DatabaseClass(':memory:');
+      Klass = probe.prepare('SELECT 1').constructor;
+    } catch {
+      Klass = null;
+    } finally {
+      if (probe) {
+        try {
+          probe.close();
+        } catch {
+          // 探测库关闭失败无关紧要：不阻断补丁
+        }
+      }
+    }
     if (!Klass || typeof Klass.prototype.all !== 'function' || Klass.prototype.all.__ocNullFix === true) return;
     const originalAll = Klass.prototype.all;
     const wrapped = function all(...params) {
@@ -412,16 +454,23 @@ function patchBetterSqlite3NullBug() {
       } catch {
         columns = [];
       }
-      const affinity = (declared) => /CHAR|CLOB|TEXT/i.test(String(declared || '')) || String(declared || '') === '';
-      // 设备侧 build 的 `columns()` 返回空（实测 columns()=0），拿不到声明类型时退化为
-      // 「按哨兵值判定」，并把命中的列名记进 trace（可审计：出现误判能一眼看见）。
+      // 亲和判定只按 SQLite 规则取 TEXT 亲和（CHAR/CLOB/TEXT）；**不**把空声明类型当作 TEXT
+      // （SQLite 里「无声明类型」是 BLOB 亲和，且本工程 schema 的列全部显式声明类型）。
+      const affinity = (declared) => /CHAR|CLOB|TEXT/i.test(String(declared || ''));
+      // 退化为「按哨兵值判定」的情形（`columns()` 不可用或返回空）：真机 trace 显示真实的
+      // `project` 查询里 `columns()` 是有内容的（`columns()=1`、命中列恰好是可空 TEXT 列），
+      // 因此退化路径不是常态；但一旦走到这里就无法区分类型，只能按哨兵值改写 ——
+      // 取舍：**宁可保留兜底**（否则 `GET /api/project` 400 / `POST /api/session` 500 会复活），
+      // 代价是「`columns()` 不可用 + 该列合法值恰为哨兵 98304」会被误写为 null；
+      // 因此退化路径**显式落 trace**（含累计次数），出现误判可一眼看见。
       patchStats.calls += 1;
       patchStats.columnsLen = columns.length;
+      const degenerate = columns.length === 0;
       const touched = new Set();
       for (const row of rows) {
         if (Array.isArray(row)) {
           for (let index = 0; index < row.length; index += 1) {
-            const allowed = columns.length === 0 || (columns[index] && affinity(columns[index].type));
+            const allowed = degenerate || (columns[index] && affinity(columns[index].type));
             if (allowed && row[index] === sentinel) {
               row[index] = null;
               touched.add(`#${index}`);
@@ -431,7 +480,7 @@ function patchBetterSqlite3NullBug() {
           const names = columns.length ? columns.map((column) => column.name) : Object.keys(row);
           for (const name of names) {
             const column = columns.find((entry) => entry.name === name);
-            const allowed = columns.length === 0 || (column && affinity(column.type));
+            const allowed = degenerate || (column && affinity(column.type));
             if (allowed && row[name] === sentinel) {
               row[name] = null;
               touched.add(name);
@@ -447,9 +496,20 @@ function patchBetterSqlite3NullBug() {
           `columns()=${columns.length}; rows=${rows.length}; 数组行=${Array.isArray(rows[0])}; 本次还原=${touched.size}; 命中列=${[...touched].slice(0, 12).join(',')}`,
         ]);
       }
+      // 退化路径（拿不到声明类型）**必须留痕**：这是唯一可能误伤合法值 98304 的分支，
+      // 一旦出现就有据可查（含累计次数与被改写的列）。
+      if (degenerate && touched.size > 0 && !patchStats.degenerateLogged) {
+        patchStats.degenerateLogged = true;
+        trace('SQLITE_NULL_FIX_DEGENERATE', [
+          `columns() 不可用（长度 0）⇒ 按哨兵值判定：本次改写 ${touched.size} 列；calls=${patchStats.calls}; 累计改写=${patchStats.conversions}; 命中列=${[...touched].slice(0, 12).join(',')}`,
+        ]);
+      }
       if (patchStats.conversions > 0 && !patchStats.firstHitLogged) {
         patchStats.firstHitLogged = true;
-        log(`[依赖兜底] NULL 缺陷兜底已生效：首个命中的列 = ${[...patchStats.touched].slice(0, 12).join(',')}`);
+        log(
+          `[依赖兜底] NULL 缺陷兜底已生效：首个命中的列 = ${[...patchStats.touched].slice(0, 12).join(',')}` +
+            `（累计 calls=${patchStats.calls}, 改写=${patchStats.conversions}）`,
+        );
       }
       return rows;
     };
