@@ -13,6 +13,17 @@
  */
 'use strict';
 
+// ─── 启动期自证（必须早于任何可能触发原生崩溃的调用）────────────────────────────
+// 真机教训：崩溃若发生在「探针」里，进程会 SIGSEGV，连一条日志都来不及写，
+// 于是所有可观测面（trace / 状态文件 / hilog）全是空白，无法区分「没跑」与「跑到一半崩了」。
+// 因此这里用最小依赖（仅 node:fs）先把「main.js 已被加载」落盘，再继续后面的初始化。
+try {
+  require('node:fs').appendFileSync(
+    process.env.OCR_TRACE_FILE || '/data/storage/el2/base/files/ocr-trace.log',
+    `${new Date().toISOString()} BOOT main.js loaded pid=${process.pid}\n`,
+  );
+} catch {}
+
 const { app, BrowserWindow, session } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -80,6 +91,54 @@ function writeStartupStatus() {
 }
 process.on('uncaughtException', (error) => trace('UNCAUGHT_EXCEPTION', [error]));
 process.on('unhandledRejection', (reason) => trace('UNHANDLED_REJECTION', [reason]));
+
+/**
+/**
+ * 设备运行时能力自证（Unicode 属性转义）。
+ *
+ * 为什么需要：上游产物在**模块初始化期**就会构造 `/^\p{Emoji}\p{Mark}*$/u` 这类正则
+ * （`string-width`）；一旦设备的 ICU/Unicode 数据不完整，服务端产物会**import 即失败**，
+ * 表现为「白屏」且 hilog 里看不出原因。把这条事实在启动时落进 trace，失败才可查。
+ *
+ * 真机实测（2026-10-14，设备 OpenHarmony-7.0.0.105 / API 26）：
+ *   - 本应用曾因为 resfile 下 `icudtl.dat` 被 CRLF 归一化损坏（−51 B）而**全面失去 ICU 能力**：
+ *     `\p{Emoji}` → `Invalid property name`，`new Intl.Collator()` → `RangeError: Internal error. Icu error.`；
+ *   - 修好 `icudtl.dat` 后，`\p{L}` / `\p{Mark}` / `\p{Nd}` / `\p{Z}` / `\p{Cc}` / `\p{Script=Latin}`
+ *     与 `\p{Emoji}` / `\p{Emoji_Presentation}` / `\p{Emoji_Component}` / `\p{Extended_Pictographic}`
+ *     全部可用，原生 `Intl.Collator` / `Intl.Segmenter` / `Intl.DateTimeFormat` / `Intl.NumberFormat`
+ *     （含显式 locale）也全部可用。
+ *
+ * 结论与边界：**设备 ICU 本身完整，不做任何兜底替换**。本函数只做 Unicode 属性转义探测 ——
+ * 这类调用即使属性名非法也只会抛**可捕获**的 SyntaxError。绝不在此探测 Intl：在 ICU 数据损坏的
+ * 设备上，`new Intl.Segmenter(...)` 会让进程**原生崩溃**（SIGSEGV，连一条日志都来不及写），
+ * 即「探测本身就会打死应用」；Intl 是否可用交给上游产物自己的使用路径暴露（fail-visible）。
+ */
+function probeRuntimeCapabilities() {
+  const properties = [
+    'Emoji',
+    'Emoji_Presentation',
+    'Emoji_Component',
+    'Extended_Pictographic',
+    'Default_Ignorable_Code_Point',
+    'Mark',
+    'L',
+    'Nd',
+    'Z',
+    'Cc',
+    'Script=Latin',
+  ];
+  const result = {};
+  for (const property of properties) {
+    try {
+      new RegExp(`\\p{${property}}`, 'u');
+      result[property] = 'ok';
+    } catch (error) {
+      result[property] = `FAIL(${error && error.message})`;
+    }
+  }
+  trace('UNICODE_PROPERTY_PROBE', [JSON.stringify(result)]);
+  log(`[探针] Unicode 属性转义：${JSON.stringify(result)}`);
+}
 
 /**
  * 阶段状态机（loading 页据此显示；fail-visible）。
@@ -443,13 +502,26 @@ function loadingPageHtml(stageText, detail) {
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 }
 
+/**
+ * 建窗（窗口尺寸 = App 的可见分辨率）。
+ *
+ * 尺寸来源：`OCR_WINDOW_WIDTH` / `OCR_WINDOW_HEIGHT`（默认 **1280×720**）。
+ * 为什么改默认：需求要求「把 App 分辨率设为 1280x720」——这是 UI 走查/截图的常用基准尺寸。
+ * 作用机制：runtime 的 `web_engine/src/main/ets/adapter/AppWindowAdapter.ets` 会把 Electron 窗口的
+ * bounds 映射到 HarmonyOS 窗口（`windowClass.resize(bounds.width, bounds.height, ...)`），
+ * 因此这里改尺寸即改 App 的可见窗口分辨率。
+ */
 function createWindow() {
   currentStage = STAGES.WINDOW;
+  const width = Number(process.env.OCR_WINDOW_WIDTH || 1280);
+  const height = Number(process.env.OCR_WINDOW_HEIGHT || 720);
+  log(`[${currentStage}] 建窗 ${width}×${height}`);
   mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 960,
-    minWidth: 960,
-    minHeight: 640,
+    width,
+    height,
+    // 最小尺寸不得大于建窗尺寸，否则系统会按最小值撑开（截取 1280×720 会失败）
+    minWidth: Math.min(960, width),
+    minHeight: Math.min(640, height),
     title: 'OC Desktop',
     backgroundColor: '#14161a',
     show: true,
@@ -479,6 +551,14 @@ async function loadRenderer() {
   const window = createWindow();
   await window.loadURL(loadingPageHtml(`${currentStage}：${STAGES.LOAD}`, target));
   await window.loadURL(target);
+  // 应用域自证：把窗口**实际** bounds 落进 trace（真机 sh 域可读），用于客观核对分辨率
+  try {
+    const bounds = window.getBounds();
+    const content = window.getContentBounds();
+    log(`[${currentStage}] 窗口实际尺寸 bounds=${JSON.stringify(bounds)} content=${JSON.stringify(content)}`);
+  } catch (error) {
+    log(`[${currentStage}] 读取窗口尺寸失败：${error && error.message}`);
+  }
   currentStage = STAGES.READY;
   log(`[${currentStage}] 界面已加载 ${target}`);
 }
@@ -497,6 +577,9 @@ function shutdown(reason) {
 
 async function main() {
   // 启动即落一份「暂无失败」的状态文件：让设备侧能区分「没有失败」与「状态文件从未写出」
+  // Unicode 属性转义自证必须在导入服务端产物之前：上游产物在**模块初始化期**就会构造 `\p{...}` 正则
+  probeRuntimeCapabilities();
+  writeStartupStatus();
   writeStartupStatus();
   // 渲染层地址与端口在 app ready 前确定：Chromium 的安全来源开关只能在 ready 前设置
   lanAddress = process.env.OCR_LAN_ADDRESS || pickLanAddress();
