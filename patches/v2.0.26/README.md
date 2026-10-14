@@ -1,4 +1,4 @@
-# patches/v2.0.26 —— opencode v2.0.26 上游补丁（5 条）
+# patches/v2.0.26 —— opencode v2.0.26 上游补丁（6 条）
 
 本目录是**上游补丁**（不是本工程的构建脚本）。补丁只做「新增文件 + 开关式少量改动」，由
 `scripts/build-opencode.mjs` 阶段 ① 幂等应用到 `../opencode`，再由阶段 ③ 构建产物。
@@ -25,9 +25,10 @@
 | `0003-runtime-stubs-ohos.patch` | `packages/core/package.json`（`#pty`、`#persistent-pty-binary` 各增 1 行）+ 新文件 `packages/core/src/pty/pty.ohos.ts`（34 行）、`packages/core/src/persistent-pty/binary.ohos.ts`（22 行） | **必需**：`pty.node.ts` 在**模块顶层**执行 `createRequire(import.meta.url)(OPENCODE_NODE_PTY_PATH ?? "@lydell/node-pty")`，glibc `.node` 加载失败会**中断整个 bundle 的 import**（`pty.ts` 经 `lazy(() => import("#pty"))` 把它拉进模块图）。打桩后由「启动即崩」降级为「终端不可用」：两个 stub 均 `available = false`、调用即抛错，错误说明设备侧 PTY 平台级不可用（SELinux 拒 `forkpty/openpty/popen`）、`opencode-pty` 无 ohos 构件且沙箱禁执行自带 ELF。 |
 | `0004-tui-zed-sqlite-ohos.patch` | `packages/tui/package.json`（`#zed-sqlite` 增 1 行）+ 新文件 `packages/tui/src/editor-zed-sqlite.ohos.ts`（54 行） | **必需**：`#zed-sqlite` 原先只有 `bun` / `node` / `default` 三个条件，在 `conditions: ["ohos", "node"]`（0001）下落到 `node` 变体，而该变体**静态** `import "node:sqlite"` ⇒ 模块加载期即抛 `No such binding: sqlite`，整个 CLI 产物无法启动（服务端宿主无输出、应用白屏）。ohos 变体改用 better-sqlite3（与 0002 同一策略与同一 `.node`），接口只暴露 `all` / `get`。 |
 | `0005-string-width-ohos.patch` | `packages/tui/package.json`（`#string-width` 增 1 行）+ 新文件 `packages/tui/src/util/string-width.ohos.ts`（28 行） | **当时判定为必需（2026-10-13）；2026-10-14 复盘：根因误判，已登记为可回收**。`#string-width` 原先只有 `bun` / `node` / `default`，在 `conditions: ["ohos", "node"]` 下落到 `node` 变体，而该变体在**模块顶层**构造 `new RegExp("^\p{Emoji}\p{Mark}*$", "u")` 与 `new RegExp("^\p{Emoji_Presentation}", "u")`；当时设备上运行期抛 `Invalid regular expression: ... Invalid property name` ⇒ 服务端 import 即失败、应用白屏（现场见 `logs/20261013-1/INCIDENT` 与 `ocr-trace.log` 的 `[启动服务端宿主] FAIL`）。**该现象的真实根因不是设备 ICU 能力缺失，而是 `web_engine/src/main/resources/resfile/icudtl.dat` 被 CRLF 归一化损坏了 51 字节**（详见 `docs/鸿蒙环境能力清单-v2.0.26.md` §10.2 / §10.4）；`icudtl.dat` 修复后真机实测 `\p{Emoji}` / `\p{Emoji_Presentation}` / `\p{Emoji_Component}` / `\p{Extended_Pictographic}` 全部可用，本补丁**因此不再必要**。回收需重跑 `build-opencode` 并复核品牌化断言，登记为后续项；当前保留不影响运行（差异只影响 TUI 文本对齐，本工程设备上无终端，`#pty` 已由 0003 打桩）。 |
+| `0006-shell-select-ohos.patch` | `packages/core/src/shell/select.ts`（2 处改，共 +10 行） | **必需（2026-10-14 真机定位）**：① `stat()`（`statSync(file, { throwIfNoEntry: false })`）在 OpenHarmony 应用域内对**系统路径**（如 `/bin/sh`、`/system/bin/sh`）抛 `EACCES: permission denied` 而**不是** `ENOENT`，`throwIfNoEntry` 只兜 `ENOENT` ⇒ 异常冒泡到 `select → executable → environment`；② `fallback()` 增认 `OC_SHELL_FALLBACK`。故障现象极具迷惑性：opencode 在**每次模型请求前**都会解析 shell（`SessionModelRequest.prepare → environment()`），因此会话建得出、用户消息能进库、SSE 也连得上，**但助手永远不回复**，服务端日志只有 `ERROR "Failed to drain Session" cause="EACCES: permission denied, stat '/bin/sh'"`，UI 侧表现为消息列表里冒出 `{type:"idle",outcome:"failed"}`。修法把「不可读」与「不存在」一视同仁（都当作「该 shell 不可用」，交给 `fallback()`），并让壳侧通过 `OC_SHELL_FALLBACK=/system/bin/sh`（`src-main/main.js` 的 `configureEnvironment`，可用 `OCR_SHELL` 覆盖）注入设备上真正可执行的 shell。 |
 
-以下为**尚未立项**的候选（按 §6.2 追加到列表末尾即可，编号单调递增）：`0006-search-ohos`（`#fff` 纯 JS 走查）、
-`0007-plugin-gate`（插件闸门）、`0008-branding`（若品牌化改为上游补丁而非产物级替换）。本目录当前为 5 条。
+以下为**尚未立项**的候选（按 §6.2 追加到列表末尾即可，编号单调递增）：`0007-search-ohos`（`#fff` 纯 JS 走查）、
+`0008-plugin-gate`（插件闸门）、`0009-branding`（若品牌化改为上游补丁而非产物级替换）。本目录当前为 6 条。
 
 ## 生成命令（可复现）
 
@@ -65,15 +66,15 @@ git apply <补丁> && git apply --reverse --check <补丁> && git apply --revers
 git status --porcelain                   # 必须为空（含 -uall）
 ```
 
-本目录 5 条补丁在 9b4ec5714d 上的实际校验结果（**2026-10-13 复核并重跑**）：
+本目录 6 条补丁在 9b4ec5714d 上的实际校验结果（**2026-10-14 复核并重跑**，即加入 `0006` 后）：
 
 | 校验项 | 方法 | 结果 |
 |---|---|---|
-| 已应用判据（幂等） | 逐条 `git -C ../opencode apply --reverse --check` | 4/4 **成功** ⇒ 主工作树当前为「已应用」态，`build-opencode.mjs` 阶段 ① 会全部跳过 |
-| 正向未应用判据 | 逐条 `git -C ../opencode apply --check` | 4/4 失败（预期：已应用） |
-| 干净基线按序应用 | `git worktree add --detach 9b4ec5714d` 后按 `0001→0002→0003→0004` 依次 `git apply` | 4/4 **干净应用**，无 fuzz、无 `--3way` |
-| 应用结果一致性 | 补丁应用后的 7 个落点文件 vs 主工作树对应文件 | 6/7 **逐字节一致**；`packages/tui/src/editor-zed-sqlite.ohos.ts` 因 `core.autocrlf=true` 的 CRLF/LF 落地差异在 `diff -q` 下报差异，**规范化行尾后逐字节一致**（见下方「其它约定」的行尾条） |
-| 往返 | `git apply` → `git apply --reverse --check` → `git apply --reverse` | 通过；反向应用后工作区回到基线 |
+| 已应用判据（幂等） | 逐条 `git -C ../opencode apply --reverse --check` | 加入 `0006` 前 **5/6 成功**（`0001`–`0005`；`0006` 未应用）⇒ `build-opencode.mjs` 阶段 ① 对前五条跳过、只应用 `0006`；`build-opencode` 跑完后 **6/6 成功** |
+| 正向未应用判据 | 逐条 `git -C ../opencode apply --check` | 与该判据互补：`0001`–`0005` 失败、`0006` 成功（预期） |
+| 干净基线按序应用 | `git worktree add --detach 9b4ec5714d` 后按 `0001→0002→…→0006` 依次 `git apply` | **6/6 干净应用**，无 fuzz、无 `--3way`；工作区 `git status --porcelain -uall` 恰为 **9 个落点文件**（4 个已跟踪文件被改 + 5 个新增文件） |
+| 应用结果一致性 | 干净基线应用后的 9 个落点文件 vs 主工作树（`build-opencode` 跑完、`0006` 也应用之后）对应文件 | **8/9 逐字节一致**；`packages/tui/src/editor-zed-sqlite.ohos.ts` 因 `core.autocrlf=true` 的 CRLF/LF 落地差异在 `cmp` 下报差异，**删掉 `\r` 后逐字节一致**（见下方「其它约定」的行尾条）—— 即 **9/9 在行尾归一化后一致**（2026-10-14 实测口径） |
+| 往返 | 逐条 `git apply` → `git apply --reverse --check` | **6/6 通过**（干净基线上逐条应用后反向判据全部成功，见上「干净基线按序应用」） |
 
 历史记录（3 条版本，2026-10-11）：逐条 `--check` 通过、往返后工作区为空、blob 哈希一致、
 对真实上游主工作树做只读 `git apply --check` 亦全部通过。
