@@ -535,6 +535,43 @@ async function testToolContract() {
   resident.dispose()
 }
 
+/**
+ * abort 监听器的**作用域与注销**回归用例。
+ * 缺陷形态（2026-10-14 代码评审发现）：监听器在 `ensureReady()` **之前**挂上，
+ * 而注销只在命令发送的 `finally` 里 —— 于是「就绪失败 ⇒ 早退」这条路径会把监听器留宿主 signal 上，
+ * 之后该 signal 被 abort 时会 `disposeChild()` 掉**下一次调用**正在用的常驻 shell
+ * （把别人的调用错误结算成「被中断」）。修法是让监听器与注销同处一个 `try/finally`。
+ */
+async function testAbortListenerCleanup() {
+  const silent = createFakeShell({ silent: true }) // 不回显就绪哨兵 ⇒ ensureReady 走超时
+  const healthy = createFakeShell({ output: "ok\n", rc: 0 })
+  let spawnCount = 0
+  const resident = createResidentShell({
+    root: MAIN_ROOT,
+    createChild: () => {
+      spawnCount += 1
+      return spawnCount === 1 ? silent : healthy
+    },
+  })
+  const stale = new AbortController()
+  // 第一次调用：就绪超时 ⇒ 早退（READY_TIMEOUT_MS = 5000，这条断言天然要等约 5 s）
+  const failed = await resident.execute("echo hi", 1000, stale.signal)
+  check("就绪失败返回 not-ready（不抛）", failed.ok === false && failed.code === "not-ready", JSON.stringify(failed))
+  check("就绪失败丢弃常驻 shell", silent.killed === true, String(silent.killed))
+
+  // 第二次调用：健康 child，正常成功
+  const next = await resident.execute("echo hi", 1000, stale.signal)
+  check("早退后下一次调用仍成功（惰性重启）", next.ok === true && next.output.includes("ok"), JSON.stringify(next))
+
+  // 关键断言：abort「已经结束的那次调用」的 signal，不得误杀当前常驻 shell
+  stale.abort()
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  check("已结束调用的 signal 被 abort 不得误杀当前常驻 shell", healthy.killed === false, String(healthy.killed))
+  const stillOk = await resident.execute("echo hi", 1000)
+  check("该检查之后仍可正常执行", stillOk.ok === true, JSON.stringify(stillOk))
+  resident.dispose()
+}
+
 /** ------------------------------------------------ main */
 async function main() {
   console.log(`${LOG_PREFIX}[test] 夹具目录 ${FIXTURE_ROOT}`)
@@ -548,6 +585,7 @@ async function main() {
   await testResidentShell()
   await testShellToolExecute()
   await testToolContract()
+  await testAbortListenerCleanup()
 
   if (!KEEP) fs.rmSync(FIXTURE_ROOT, { recursive: true, force: true })
   else console.log(`${LOG_PREFIX}[test] 保留夹具（--keep）`)

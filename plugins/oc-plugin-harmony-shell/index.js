@@ -231,33 +231,36 @@ export function createResidentShell(options = {}) {
       // 排队期间就被中断：不必也不必去动常驻 shell（它此刻属于别的调用）
       if (signal && signal.aborted === true)
         return { ok: false, code: "killed", message: "调用在开始前已被中断", output: "" }
-      // 只有走到这里才说明本调用是当前等待者：此时中断才可以丢弃常驻 shell
+      // 只有走到这里才说明本调用是当前等待者：此时中断才可以丢弃常驻 shell。
+      // 监听器必须在**本调用成为当前等待者到结束**的整段内生效、且一定注销：
+      // `ensureReady()` 失败会提前 return，早退路径同样要摘监听器 ——
+      // 否则该监听器会留在（宿主的）signal 上，日后被 abort 时误伤**下一次调用**的常驻 shell
+      // （把别人的调用结算成「被中断」）。因此统一用 try/finally 覆盖两步。
+      const listen = Boolean(signal) && typeof signal.addEventListener === "function"
       const onAbort = () => disposeChild()
-      if (signal && typeof signal.addEventListener === "function") signal.addEventListener("abort", onAbort, { once: true })
-      const readiness = await ensureReady()
-      if (!readiness.ok) return { ok: false, code: readiness.code, message: readiness.message, output: "" }
-      const nonce = createNonce()
-      let result
+      if (listen) signal.addEventListener("abort", onAbort, { once: true })
       try {
-        result = await send(commandScript(command, nonce), nonce, timeoutMs)
+        const readiness = await ensureReady()
+        if (!readiness.ok) return { ok: false, code: readiness.code, message: readiness.message, output: "" }
+        const nonce = createNonce()
+        const result = await send(commandScript(command, nonce), nonce, timeoutMs)
+        if (result.ok) return { ok: true, rc: result.rc, ms: result.ms, output, truncated: outputTruncated }
+        const partial = { output, truncated: outputTruncated, ms: result.ms }
+        // 超时/写失败后旧进程不可信：杀掉并让下一次调用惰性重启（FR-tool-008）
+        if (result.code === "timeout" || result.code === "write-failed") disposeChild()
+        const fallback =
+          result.code === "killed"
+            ? "常驻 shell 已被丢弃（调用被中断），下次调用会自动重启"
+            : `命令在 ${timeoutMs} ms 内未结束（常驻 shell 已丢弃，下次调用自动重启）`
+        return {
+          ok: false,
+          code: result.code,
+          message: result.message ?? fallback,
+          timeoutMs,
+          ...partial,
+        }
       } finally {
-        if (signal && typeof signal.removeEventListener === "function")
-          signal.removeEventListener("abort", onAbort)
-      }
-      if (result.ok) return { ok: true, rc: result.rc, ms: result.ms, output, truncated: outputTruncated }
-      const partial = { output, truncated: outputTruncated, ms: result.ms }
-      // 超时/写失败后旧进程不可信：杀掉并让下一次调用惰性重启（FR-tool-008）
-      if (result.code === "timeout" || result.code === "write-failed") disposeChild()
-      const fallback =
-        result.code === "killed"
-          ? "常驻 shell 已被丢弃（调用被中断），下次调用会自动重启"
-          : `命令在 ${timeoutMs} ms 内未结束（常驻 shell 已丢弃，下次调用自动重启）`
-      return {
-        ok: false,
-        code: result.code,
-        message: result.message ?? fallback,
-        timeoutMs,
-        ...partial,
+        if (listen) signal.removeEventListener("abort", onAbort)
       }
     })
     chain = next.then(
