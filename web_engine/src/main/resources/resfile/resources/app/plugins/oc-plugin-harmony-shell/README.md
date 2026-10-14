@@ -84,19 +84,30 @@ cleanup：`setup` 返回的函数会 kill 常驻 shell（FR-tool-005）；工具
 
 ## 7. 验证
 
-host 侧：
+host 侧（2026-10-14：**PASS 112 / FAIL 0**）：
 
 ```bash
 node scripts/test-harmony-plugins.mjs     # 哨兵解析/抗碰撞/输出上限/超时重启/卸载等（假 sh 注入）
 node scripts/collect-app.mjs --self-test   # 断言反向用例：node-pty / exec / .node / spawn 非 /system/bin/sh
 ```
 
-真机（AC-06/AC-08，见 specs 的 JT-33…JT-37）：
+真机（AC-06/AC-08，见 specs 的 JT-33…JT-41，**2026-10-14 全部实测通过**，证据见
+`docs/鸿蒙环境能力清单-v2.0.26.md` §11.2）：
 
-1. `pwd; uname -s` → stdout + 退出码 0；
-2. `ls /nonexistent; echo rc=$?` → 非零退出码且 stderr 可见（合并输出）；
-3. `sleep 300` 且 `timeout` 设小值 → 明确超时错误；随后一次普通命令仍成功（常驻 shell 已重启）；
-4. 同一会话连续两次调用 → 输出不串（哨兵隔离 + 串行化）。
+1. `echo OC_SHELL_OK; id -u; uname -m; echo TMPDIR=$TMPDIR` → 四行 stdout（uid `20020217` / `aarch64`）
+   + `[exit code: 0]`；
+2. `ls /nonexistent; echo rc=$?` → `ls: /nonexistent: No such file or directory` + `rc=1`
+   （非零退出码且 stderr 可见）；
+3. `sleep 300` 且 `timeout: 3000` → 明确超时且常驻 shell 被丢弃；随后 `echo after-restart` →
+   `after-restart`，`[exit code: 0] [10 ms]`（惰性重启成功）；
+4. 同一会话连续/并行多次调用 → 输出不串（哨兵隔离 + 串行化）；
+5. `ps -A | grep -c " Z"` = **0**、`ps -A | wc -l` = 10（含表头）⇒ 常驻单进程设计未泄漏僵尸。
+
+**工具层契约（2026-10-14 真机踩坑后固化）**：宿主注册 `execute` 后**直接 `.then(...)`**，
+且 `ToolContext.signal` **总是存在**。因此工具层必须 ① 返回 Promise（`async` 或显式 Promise）、
+② 在 `try/finally` 一类清理代码里**不得引用其它作用域的标识符** —— 曾经因为 `finally` 里引用
+`runCommand` 作用域的 `onAbort`，导致每次调用都以 `{"type":"unknown","message":"onAbort is not defined"}`
+失败（`content` 恒为空），见 `testShellToolExecute()` 与 JT-41。
 
 ## 已知限制（code review 后登记）
 

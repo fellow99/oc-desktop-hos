@@ -211,7 +211,10 @@ export function grepTool(root) {
     description: GREP_DESCRIPTION,
     input: GREP_INPUT,
     options: { codemode: false },
-    execute: (input) => {
+    // 宿主契约是 `Promise<Tool.Result>`（packages/plugin/src/promise/tool.ts 的 `Info.execute`），
+    // 宿主会直接 `.then(...)`。返回同步值会在运行期变成 `internalCall(...).then is not a function`
+    // （2026-10-14 真机实测），因此这里必须是 async。
+    execute: async (input) => {
       const parsed = grepArguments(input)
       if (!parsed.ok) return errorResult(parsed.error)
       const target = searchTarget(parsed.value.path, root)
@@ -252,7 +255,7 @@ export function globTool(root) {
     description: GLOB_DESCRIPTION,
     input: GLOB_INPUT,
     options: { codemode: false },
-    execute: (input) => {
+    execute: async (input) => {  // 同 grepTool：宿主会 `.then(...)`，必须返回 Promise
       const parsed = globArguments(input)
       if (!parsed.ok) return errorResult(parsed.error)
       const target = searchTarget(parsed.value.path, root)

@@ -48,6 +48,13 @@ export default {
    `await` 注册后不返回值。
 2. 编辑器按**有效工具名**索引（`core/src/tool.ts`：`add/update/remove` 面对 `effectiveName`，
    未声明 namespace 时就是裸名 `grep`/`glob`），因此两处 id 都清一次；`add` 同名覆盖。
+3. **`execute` 必须返回 Promise**：宿主契约是 `Promise<Tool.Result>`
+   （`packages/plugin/src/promise/tool.ts` 的 `Info.execute`），注册后宿主直接 `.then(...)`。
+   写成同步函数返回普通对象会在**每次调用**都变成
+   `{"error":{"type":"unknown","message":"internalCall(...).then is not a function"}}`
+   —— 2026-10-14 真机实测踩到过（当时 `grep`/`glob` 两个调用都失败，而 host 用例全绿，
+   因为用例只测了下层 `searchTree`/`findTree`，没测工具层）。因此两个 `execute` 都是 `async`，
+   并由 `scripts/test-harmony-plugins.mjs` 的 `testToolContract()` 断言「thenable + 结果形状」。
 
 `input` 是**纯 JSON Schema**（插件是随包投放的独立 ESM，不参与上游 tsconfig）：
 

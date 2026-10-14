@@ -36,7 +36,9 @@ import searchPlugin, {
   formatGlobContent,
   formatGrepContent,
   globArguments,
+  globTool,
   grepArguments,
+  grepTool,
 } from "../plugins/oc-plugin-harmony-search/index.js"
 import shellPlugin, {
   DEFAULT_TIMEOUT_MS,
@@ -48,6 +50,7 @@ import shellPlugin, {
   parseSentinelLine,
   sentinelLine,
   shellArguments,
+  shellTool,
 } from "../plugins/oc-plugin-harmony-shell/index.js"
 
 const KEEP = process.argv.includes("--keep")
@@ -415,6 +418,123 @@ async function testResidentShell() {
   check("spawn 失败返回明确错误", brokenResult.ok === false && brokenResult.code === "spawn-failed", JSON.stringify(brokenResult))
 }
 
+/**
+ * 工具层：`shellTool(resident).execute(input, context)`。
+ * 宿主（packages/plugin/src/promise/adapter.ts）**总会**传入 `context.signal`；
+ * 2026-10-14 真机实测暴露过一处只在「有 signal」时才触发的缺陷（`finally` 里引用了
+ * 只存在于 `runCommand` 作用域的 `onAbort` ⇒ 每次调用都以 `onAbort is not defined` 失败，
+ * 而当时的用例集只测 `createResidentShell`，因此 96 项全绿却漏掉了它）。这里补上工具层用例。
+ */
+async function testShellToolExecute() {
+  const child = createFakeShell({ output: "tool output\n", rc: 0 })
+  const resident = createResidentShell({ root: MAIN_ROOT, createChild: () => child })
+  const tool = shellTool(resident)
+  check(
+    "shell 工具 name/description/input 齐备",
+    tool.name === "shell" && typeof tool.description === "string" && tool.input !== undefined,
+    JSON.stringify({ name: tool.name, hasDescription: typeof tool.description === "string" }),
+  )
+
+  // ① 带未中断的 AbortSignal：必须成功返回（回归点：清理钩子不得引用来路不明的标识符）
+  const controller = new AbortController()
+  let withSignal
+  let thrown
+  try {
+    withSignal = await tool.execute({ command: "echo hi" }, { signal: controller.signal })
+  } catch (error) {
+    thrown = error
+  }
+  check("带 AbortSignal 的 execute 不抛异常（onAbort 作用域回归）", thrown === undefined, thrown === undefined ? "" : String(thrown && thrown.message))
+  check(
+    "带 AbortSignal 的 execute 正常返回内容与退出码",
+    withSignal !== undefined &&
+      typeof withSignal.content === "string" &&
+      withSignal.content.includes("tool output") &&
+      withSignal.metadata !== undefined &&
+      withSignal.metadata.exitCode === 0 &&
+      withSignal.metadata.error === undefined,
+    JSON.stringify(withSignal),
+  )
+
+  // ② 宿主没给 context：同样必须成功（不得因缺 signal 而改变行为）
+  const noContext = await tool.execute({ command: "echo hi" })
+  check(
+    "无 context 的 execute 正常返回",
+    typeof noContext.content === "string" && noContext.metadata.exitCode === 0,
+    JSON.stringify(noContext),
+  )
+
+  // ③ 调用前就已中断：走 killed 结果路径，且**不抛异常**
+  const preAborted = new AbortController()
+  preAborted.abort()
+  const killedResult = await tool.execute({ command: "echo hi" }, { signal: preAborted.signal })
+  check(
+    "已中断的 signal 返回 killed 结果而非抛异常",
+    typeof killedResult.content === "string" &&
+      killedResult.metadata.error !== undefined &&
+      killedResult.metadata.timeout === false,
+    JSON.stringify(killedResult),
+  )
+
+  // ④ 非法参数 + 有 signal：走 errorResult（不抛）
+  const badArgs = await tool.execute({ command: 42 }, { signal: controller.signal })
+  check(
+    "非法参数 + signal 走 errorResult（不抛）",
+    typeof badArgs.content === "string" && badArgs.metadata.error === true,
+    JSON.stringify(badArgs),
+  )
+
+  resident.dispose()
+  check("工具层用例结束后常驻 shell 被释放", child.killed === true, String(child.killed))
+}
+
+/**
+ * 三个工具（shell / grep / glob）的**宿主契约**用例。
+ * `packages/plugin/src/promise/tool.ts` 的 `Info.execute` 声明为 `Promise<Tool.Result>`，
+ * 宿主注册后直接 `.then(...)`；返回同步值会在运行期变成
+ * `internalCall(...).then is not a function`（2026-10-14 真机实测，grep/glob 两个工具都中招）。
+ * 本用例只断言「是 thenable + 结果形状」，不重复各工具的行为断言。
+ */
+async function testToolContract() {
+  const resident = createResidentShell({
+    root: MAIN_ROOT,
+    createChild: () => createFakeShell({ output: "ok\n", rc: 0 }),
+  })
+  const tools = [
+    ["shell", shellTool(resident), { command: "echo ok" }],
+    ["grep", grepTool(MAIN_ROOT), { pattern: "hello" }],
+    ["glob", globTool(MAIN_ROOT), { pattern: "**/*.txt" }],
+  ]
+  for (const [name, tool, input] of tools) {
+    let returned
+    let thrown
+    try {
+      returned = tool.execute(input, { signal: new AbortController().signal })
+    } catch (error) {
+      thrown = error
+    }
+    check(
+      `${name}: execute 同步阶段不抛异常`,
+      thrown === undefined,
+      thrown === undefined ? "" : String(thrown && thrown.message),
+    )
+    check(
+      `${name}: execute 返回 thenable（宿主契约 Promise<Tool.Result>）`,
+      returned !== null && typeof returned === "object" && typeof returned.then === "function",
+      `typeof=${typeof returned}`,
+    )
+    if (thrown === undefined && returned !== null && typeof returned.then === "function") {
+      const result = await returned
+      check(
+        `${name}: 结果含 content 字符串与 metadata 对象`,
+        typeof result.content === "string" && result.content.length > 0 && typeof result.metadata === "object",
+        JSON.stringify(result).slice(0, 160),
+      )
+    }
+  }
+  resident.dispose()
+}
+
 /** ------------------------------------------------ main */
 async function main() {
   console.log(`${LOG_PREFIX}[test] 夹具目录 ${FIXTURE_ROOT}`)
@@ -426,6 +546,8 @@ async function main() {
   testArguments()
   testSentinelProtocol()
   await testResidentShell()
+  await testShellToolExecute()
+  await testToolContract()
 
   if (!KEEP) fs.rmSync(FIXTURE_ROOT, { recursive: true, force: true })
   else console.log(`${LOG_PREFIX}[test] 保留夹具（--keep）`)

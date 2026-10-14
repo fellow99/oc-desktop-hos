@@ -348,20 +348,16 @@ export function shellTool(resident) {
       // 中断语义：把 AbortSignal 交给常驻 shell 自己处理 —— 它只在**本次调用真正成为当前等待者**
       // 时才丢弃常驻 shell。若在工具层无条件 dispose，会把排队中（还没轮到）的调用被中断这件事
       // 迁怒到正在等待同一串行链的另一次调用上。
-      try {
-        const result = await resident.execute(parsed.value.command, parsed.value.timeout, signal)
-        return {
-          content: formatShellContent(result),
-          metadata: {
-            exitCode: result.ok === true ? result.rc : undefined,
-            durationMs: result.ms,
-            truncated: result.truncated === true,
-            timeout: result.ok === false && result.code === "timeout",
-            ...(result.ok === true ? {} : { error: result.message }),
-          },
-        }
-      } finally {
-        if (signal && typeof signal.removeEventListener === "function") signal.removeEventListener("abort", onAbort)
+      const result = await resident.execute(parsed.value.command, parsed.value.timeout, signal)
+      return {
+        content: formatShellContent(result),
+        metadata: {
+          exitCode: result.ok === true ? result.rc : undefined,
+          durationMs: result.ms,
+          truncated: result.truncated === true,
+          timeout: result.ok === false && result.code === "timeout",
+          ...(result.ok === true ? {} : { error: result.message }),
+        },
       }
     },
   }
