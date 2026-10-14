@@ -1,4 +1,4 @@
-# patches/v2.0.26 —— opencode v2.0.26 上游补丁（4 条）
+# patches/v2.0.26 —— opencode v2.0.26 上游补丁（5 条）
 
 本目录是**上游补丁**（不是本工程的构建脚本）。补丁只做「新增文件 + 开关式少量改动」，由
 `scripts/build-opencode.mjs` 阶段 ① 幂等应用到 `../opencode`，再由阶段 ③ 构建产物。
@@ -24,9 +24,10 @@
 | `0002-sqlite-ohos.patch` | `packages/core/package.json`（`#sqlite` 增 1 行）+ 新文件 `packages/core/src/database/sqlite.ohos.ts`（294 行） | 真机 `node:sqlite` **无 binding**（`No such binding: sqlite`）。ohos 变体实现与 `sqlite.node.ts` 同形接口（`supportsTuningPragmas` / `supportsForeignKeyToggle` / `sqliteLayer`），两级加载后端：① `require(OPENCODE_BETTER_SQLITE3_PATH ?? "better-sqlite3")`（设备侧，`.node` 由 `electron/libs/arm64-v8a/` 投放，不能从 resfile dlopen）；② 失败回落 `node:sqlite` 的 `DatabaseSync`（**仅 host 侧**，Node 22.17 冒烟门禁用）；两级都失败时错误里同时给出两条路径与原因。better-sqlite3 API 映射：`safeIntegers`↔`setReadBigInts`、`raw(true)`↔`setReturnArrays`、`new Database(filename,{readonly,timeout,fileMustExist})`、`exec/loadExtension/pragma/close`。`disableWAL !== true && readonly !== true` 时 `PRAGMA journal_mode = WAL`。**语义对齐（2026-10-12 真机实测新增）**：better-sqlite3 的 `Statement#all()` 对「不返回数据」的语句抛 `This statement does not return data. Use run() instead`，而 `node:sqlite` 返回 `[]` —— 若不对齐，服务端启动的 `PRAGMA synchronous = NORMAL` 会直接失败（真机表现为 `cli process failed`）。因此 `all()` 先按 `reader === false` 走 `run()` 并返回 `[]`，再以错误信息兜底（aarch64-ohos / ABI v138 的构建**未**暴露可用的 `reader` 标志，故不能只依赖该属性）。 |
 | `0003-runtime-stubs-ohos.patch` | `packages/core/package.json`（`#pty`、`#persistent-pty-binary` 各增 1 行）+ 新文件 `packages/core/src/pty/pty.ohos.ts`（34 行）、`packages/core/src/persistent-pty/binary.ohos.ts`（22 行） | **必需**：`pty.node.ts` 在**模块顶层**执行 `createRequire(import.meta.url)(OPENCODE_NODE_PTY_PATH ?? "@lydell/node-pty")`，glibc `.node` 加载失败会**中断整个 bundle 的 import**（`pty.ts` 经 `lazy(() => import("#pty"))` 把它拉进模块图）。打桩后由「启动即崩」降级为「终端不可用」：两个 stub 均 `available = false`、调用即抛错，错误说明设备侧 PTY 平台级不可用（SELinux 拒 `forkpty/openpty/popen`）、`opencode-pty` 无 ohos 构件且沙箱禁执行自带 ELF。 |
 | `0004-tui-zed-sqlite-ohos.patch` | `packages/tui/package.json`（`#zed-sqlite` 增 1 行）+ 新文件 `packages/tui/src/editor-zed-sqlite.ohos.ts`（54 行） | **必需**：`#zed-sqlite` 原先只有 `bun` / `node` / `default` 三个条件，在 `conditions: ["ohos", "node"]`（0001）下落到 `node` 变体，而该变体**静态** `import "node:sqlite"` ⇒ 模块加载期即抛 `No such binding: sqlite`，整个 CLI 产物无法启动（服务端宿主无输出、应用白屏）。ohos 变体改用 better-sqlite3（与 0002 同一策略与同一 `.node`），接口只暴露 `all` / `get`。 |
+| `0005-string-width-ohos.patch` | `packages/tui/package.json`（`#string-width` 增 1 行）+ 新文件 `packages/tui/src/util/string-width.ohos.ts`（28 行） | **当时判定为必需（2026-10-13）；2026-10-14 复盘：根因误判，已登记为可回收**。`#string-width` 原先只有 `bun` / `node` / `default`，在 `conditions: ["ohos", "node"]` 下落到 `node` 变体，而该变体在**模块顶层**构造 `new RegExp("^\p{Emoji}\p{Mark}*$", "u")` 与 `new RegExp("^\p{Emoji_Presentation}", "u")`；当时设备上运行期抛 `Invalid regular expression: ... Invalid property name` ⇒ 服务端 import 即失败、应用白屏（现场见 `logs/20261013-1/INCIDENT` 与 `ocr-trace.log` 的 `[启动服务端宿主] FAIL`）。**该现象的真实根因不是设备 ICU 能力缺失，而是 `web_engine/src/main/resources/resfile/icudtl.dat` 被 CRLF 归一化损坏了 51 字节**（详见 `docs/鸿蒙环境能力清单-v2.0.26.md` §10.2 / §10.4）；`icudtl.dat` 修复后真机实测 `\p{Emoji}` / `\p{Emoji_Presentation}` / `\p{Emoji_Component}` / `\p{Extended_Pictographic}` 全部可用，本补丁**因此不再必要**。回收需重跑 `build-opencode` 并复核品牌化断言，登记为后续项；当前保留不影响运行（差异只影响 TUI 文本对齐，本工程设备上无终端，`#pty` 已由 0003 打桩）。 |
 
-以下为**尚未立项**的候选（按 §6.2 追加到列表末尾即可，编号单调递增）：`0005-search-ohos`（`#fff` 纯 JS 走查）、
-`0006-plugin-gate`（插件闸门）、`0007-branding`（若品牌化改为上游补丁而非产物级替换）。本目录当前为 4 条。
+以下为**尚未立项**的候选（按 §6.2 追加到列表末尾即可，编号单调递增）：`0006-search-ohos`（`#fff` 纯 JS 走查）、
+`0007-plugin-gate`（插件闸门）、`0008-branding`（若品牌化改为上游补丁而非产物级替换）。本目录当前为 5 条。
 
 ## 生成命令（可复现）
 
@@ -64,7 +65,7 @@ git apply <补丁> && git apply --reverse --check <补丁> && git apply --revers
 git status --porcelain                   # 必须为空（含 -uall）
 ```
 
-本目录 4 条补丁在 9b4ec5714d 上的实际校验结果（**2026-10-13 复核并重跑**）：
+本目录 5 条补丁在 9b4ec5714d 上的实际校验结果（**2026-10-13 复核并重跑**）：
 
 | 校验项 | 方法 | 结果 |
 |---|---|---|
