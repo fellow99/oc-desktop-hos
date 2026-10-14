@@ -34,7 +34,7 @@
 | D3 | 交付给服务端之前做**写入探针 + 回读校验** | 备选「直接交给服务端，失败再报错」被否：把平台权限问题的发现时机推到模型工具调用里，诊断成本高 | 已决策 |
 | D4 | 未授权时**显式回退**到沙箱默认项目根，并在 UI 明示 | 备选「阻塞启动直到授权」被否：首启体验不可接受（应用本身在沙箱内可完全可用） | 已决策 |
 | D5 | ArkTS 侧能力只以**JSON 单入单出**的薄包装暴露给宿主 | 直接调用既有 adapter binding 不可行：通用桥 ≤3 参、仅原始类型（dsh 真机 D.2 第 7/14 条） | 已决策 |
-| D6 | 权限面固定为 `Documents` / `Download`（`normal`）+ `FILE_ACCESS_PERSIST`；不申请 `Desktop` | `Desktop` 为 `system_basic`，是当前唯一上架障碍（§8.3） | 已决策 |
+| D6 | 本模块权限面固定为 `Documents` / `Download`（`normal`）+ `FILE_ACCESS_PERSIST`；`Desktop` 不申请、不直写 | `Desktop` 为 `system_basic`，有上架障碍风险（§8.3）；**例外（2026-10-14 口径变更）**：该权限改由 `006-signing-identity` 声明并随 ACL 批次申请，本模块仍不声明、不直写 | 已决策（口径更新） |
 | D7 | 目录选择器形态（ArkTS Picker vs 壳层自绘）留待 Phase 1 真机对照（O6） | 两种形态在授权语义上不同（Picker 天然产出可授权路径；自绘浏览器只能遍历应用可见范围） | ⬜ 待定 |
 
 ## 3. 数据模型
@@ -98,7 +98,7 @@ applyProjectRoot(host, realPath) -> { applied, crossCheckedLocation }
 | 层 | 手段 | 覆盖 |
 |---|---|---|
 | 单元（裸 Node / host 侧） | `node:test` | 默认根生成、选择记录读写（仅路径）、探针封装（对沙箱目录应为 `ok`）、`applyProjectRoot` 的差异判定、失败分支（`denied` / `unsupported` / 探针 `EACCES`） |
-| 静态断言 | `grep` 守卫 | 权限声明面不含 `READ_WRITE_DESKTOP_DIRECTORY`（注：该权限自 2026-10-14 起由 `006-signing-identity` 声明，本模块 `grep` 断言范围不变）；代码中不出现把 URI 当项目根的分支；不出现 `symlink` / `hardlink` 依赖 |
+| 静态断言 | `grep` 守卫 | 代码中不出现把 URI 当项目根的分支；不出现 `symlink` / `hardlink` 依赖。权限声明面的**存在性**断言由 `006-signing-identity` 的 `scripts/collect-runtime.mjs` 阶段 10.6 承担（本模块**不再**断言 `READ_WRITE_DESKTOP_DIRECTORY` 不存在，见 FR-011-011 例外） |
 | host 侧门禁 | `scripts/smoke-node22.mjs` | 宿主启动时项目根注入不破坏服务端启动；`GET /api/location` 可达 |
 | 真机（Phase 1） | 应用域取证（`--inspect` / 日志 / UI） | ① 沙箱默认根探针通过 ② 未授权用户目录 → `EACCES`/`EPERM` + 指引可见 ③ 授权 + 重启后探针通过 ④ 第二次启动重放激活成功 ⑤ UI 内切换项目后 `GET /api/location` 一致 |
 | 先决探针 | Phase 0 **P0-1**（宿主形态） | 决定「项目根变化是否需要重建宿主」；若宿主不可重建，则切换项目限定为「服务端仍在同一项目根、仅会话根变化」⬜ |

@@ -88,7 +88,8 @@ hdc shell aa start -a EntryAbility -b org.fellow99.oc.OCDesktop
 - **最小权限**：`INTERNET`/`GET_NETWORK_INFO`/`READ_WRITE_DOCUMENTS_DIRECTORY`/`READ_WRITE_DOWNLOAD_DIRECTORY`/
   `FILE_ACCESS_PERSIST` + 3 项受限权限（JIT `kernel.ALLOW_WRITABLE_CODE_MEMORY`，须同时出现在 `requestPermissions` 与
   `definePermissions`；`READ_PASTEBOARD`、`READ_WRITE_DESKTOP_DIRECTORY`，后两项随 ACL 批次申请）；
-  已移除 `PRINT`、`CUSTOM_SANDBOX`、`RUN_ANY_CODE`、相机/麦克风/定位等（守卫会断言不存在）。
+  已移除 `PRINT`、`CUSTOM_SANDBOX`、`RUN_ANY_CODE`、`kernel.LOAD_INDEPENDENT_LIBRARY`、`ALLOW_EXTERNAL_NATIVE_CODE`
+  （`scripts/collect-runtime.mjs` 阶段 10.6 会断言这些名字不存在）；相机/麦克风/定位等权限当前也未声明（未加守卫断言）。
 - **上架合规**：EntryAbility 已去掉 `entity.system.browsable` / 深链入口（G1）；图标纯色不透明（当前为**占位图标**，发布前必须替换）；
   其余清单见 `docs/ACL申请清单.md` 与规划 §8.5。
 - **签名**：本包名必须重新生成证书（不能复用 `com.huawei.ohos_electron`），并按本包名单独申请 ACL；

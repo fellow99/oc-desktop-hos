@@ -166,13 +166,15 @@ const APP_KEEP = new Set([
  * 权限断言：必须**不得**出现的受限/上架障碍权限（工程规划 §8.3）。
  * 例外：`READ_WRITE_DESKTOP_DIRECTORY` 自 006-signing-identity 对齐
  * `dsh-desktop-hos/docs/ACL申请清单-v1.md` 后**改为声明并随批次申请**（见 REQUIRED_PERMISSIONS），
- * 因此从本表移除；上架前仍须按 `docs/ACL申请清单.md` §5 复核是否保留。
+ * 因此从本表移除；上架前仍须按 `docs/ACL申请清单.md` §7.3 ⬜-6 复核是否保留。
  */
 const FORBIDDEN_PERMISSIONS = [
   'ohos.permission.PRINT',
   'ohos.permission.CUSTOM_SANDBOX',
   'ohos.permission.RUN_ANY_CODE',
-  'ohos.permission.LOAD_INDEPENDENT_LIBRARY',
+  // ⚠️ 真实权限名带 `kernel.` 前缀（原表写成 `ohos.permission.LOAD_INDEPENDENT_LIBRARY`，
+  //    该名字不存在 ⇒ 声明真名时本断言不会命中，属静默失效，2026-10-14 修正）
+  'ohos.permission.kernel.LOAD_INDEPENDENT_LIBRARY',
   'ohos.permission.ALLOW_EXTERNAL_NATIVE_CODE',
 ];
 
@@ -189,6 +191,19 @@ const REQUIRED_PERMISSIONS = [
   'ohos.permission.READ_WRITE_DOCUMENTS_DIRECTORY',
   'ohos.permission.READ_WRITE_DOWNLOAD_DIRECTORY',
   'ohos.permission.FILE_ACCESS_PERSIST',
+];
+
+/**
+ * `user_grant` 权限（`docs/ACL申请清单.md` §1 的 #2–#5）。
+ * 这些项**必须**带 `reason` + `usedScene`，否则系统授予弹窗/上架审核会缺材料；
+ * 断言实现见 stage10Guards 10.6b（定位条目本体直到其 `}`，再断言含 `usedScene`），
+ * 以容忍 json5 注释与字段顺序变化。
+ */
+const USER_GRANT_PERMISSIONS = [
+  'ohos.permission.READ_PASTEBOARD',
+  'ohos.permission.READ_WRITE_DESKTOP_DIRECTORY',
+  'ohos.permission.READ_WRITE_DOCUMENTS_DIRECTORY',
+  'ohos.permission.READ_WRITE_DOWNLOAD_DIRECTORY',
 ];
 
 /** JIT 权限（V8 必需，须同时出现在 requestPermissions 与 definePermissions） */
@@ -633,6 +648,16 @@ function stage10Guards(manifest) {
     }
     for (const permission of REQUIRED_PERMISSIONS) {
       guard(text.includes(permission), `已声明权限 ${permission}`);
+    }
+    // 10.6b `user_grant` 项必须带 reason + usedScene（specs/006 FR-006-012 / FR-006-026）
+    // 匹配口径：先按 `"name": "<perm>"` 定位条目，再取到**该条目自身的 `}`** 为止（`[\s\S]*?` 在
+    // 第一个 `}` 处停止 ⇒ 恰好覆盖嵌套的 `usedScene` 对象），最后断言该片段含 `usedScene`。
+    // 不用「N 字符窗口」——那样会被**相邻条目**的 usedScene 误判为通过（负向用例已实测）。
+    for (const permission of USER_GRANT_PERMISSIONS) {
+      const entry = text.match(
+        new RegExp(`\\{\\s*"name"\\s*:\\s*"${permission.replace(/\./g, '\\.')}"[\\s\\S]*?\\}`),
+      );
+      guard(Boolean(entry) && entry[0].includes('usedScene'), `user_grant 权限带 usedScene ${permission}`);
     }
     const jitHits = text.split(JIT_PERMISSION).length - 1;
     guard(jitHits === 2, `JIT 权限出现在 requestPermissions + definePermissions 两处（实际 ${jitHits} 处）`);

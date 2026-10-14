@@ -42,6 +42,10 @@
 | 3 | `ohos.permission.READ_WRITE_DESKTOP_DIRECTORY` | `system_basic` | 11 | 平板 + 2in1 | `user_grant` | ✅ | 工作目录位于桌面时的直写（AI agent 文件工具读写） |
 
 > 三项**一次提交**（单批上限 30 项），审核结果整批返回；上一批未审完不能提交新一批。
+>
+> **`usedScene` 口径**：4 个 `user_grant` 项统一为 `abilities: ["EntryAbility"]`（entry 模块中真实存在的 Ability，原 `FormAbility` 在本工程并不存在）+ `when: "inuse"`，与上游 `ACL申请清单-v1.md` 的声明现状一致。⬜ 待真机复验：桌面/文档/下载目录在 `inuse` 下的授予与拒绝行为（若出现 `EACCES`/`EPERM`，须先确认是本项而非「未在设置里授权」，再决定是否放宽为 `always`）。
+>
+> **`reason` 文案口径**：`module.json5` 的 `reason` 是**系统授权弹窗**文案，取自 `$string:access_pasteboard` / `$string:desktop_dir`（值仍是上游运行时默认的「… requires user_grant permission」）。注意：`web_engine/src/main/resources/{base,en_US,zh_CN}/element/string.json` 由 `collect-runtime.mjs` 从发行版运行时投放（**不在** `OVERLAY_FILES` 白名单内），本地改这两份字符串会在下次 collect-runtime 时被覆盖；要改弹窗文案须先把它加进 `OVERLAY_FILES`。§3.2/§3.3 的「申请原因」是**AGC 表单**文本，与弹窗文案是两件事。
 
 ### 3.1 `kernel.ALLOW_WRITABLE_CODE_MEMORY`（关键路径）
 
@@ -49,12 +53,12 @@
 - **声明落点（必须两处同时有）**：
   1. `web_engine/src/main/module.json5` → `requestPermissions`；
   2. `web_engine/src/main/module.json5` → `definePermissions`（该模块以 `definePermissions` 对外定义能力）。
-  另：`electron/src/main/module.json5` 承载本应用的开放权限声明（见 §4）。
+  另：本工程**当前全部权限声明都在 `web_engine/src/main/module.json5`**（`electron/src/main/module.json5` 目前没有任何 `requestPermissions`；`KEEP_BACKGROUND_RUNNING` 等开放权限的 entry 侧声明仍为待落地项，见 §4/§9）。
 - **为什么必须为新包名重申请**：ACL 与 **bundleName + AGC 应用主体**绑定；本工程使用 `org.fellow99.oc.OCDesktop`（不是 `com.huawei.ohos_electron`，也不是 dsh 的包名），因此 dsh 已获批的同类权限**不能转移**（⬜ 待工单确认口径）。
 - **申请填写口径（建议）**：
   - `申请原因`（≤256 字）：本应用为 Electron 桌面应用在鸿蒙 PC 上的移植，运行时引擎（V8）需要在运行期生成机器码，必须申请可写可执行内存权限；不用于热更新，不加载外部不可信代码。
   - `使用场景`：应用启动与日常使用过程中由运行时引擎自行编译脚本；用户不感知该过程。
-- **落点复核（⬜）**：`definePermissions` 与 `requestPermissions` 的写法、是否需要同时出现在 HAR 模块与 entry 模块、以及 dev/release Profile 的差异，须按本机 SDK 校验（`docs/工程规划-V2.md` 附录 B 给出的路径）。
+- **落点复核**：`definePermissions` 与 `requestPermissions` 的写法、是否需要同时出现在 HAR 模块与 entry 模块、以及 dev/release Profile 的差异，须按本机 SDK 校验（`docs/工程规划-V2.md` 附录 B 给出的路径）。✅ **2026-10-14 已取证**：真实构建产物 `electron/build/default/outputs/default/electron-default-signed.hap` 内 `module.json` 保留了 HAR 声明的 4 个 `user_grant` 项及其 `reason`/`reasonId`/`usedScene`（`EntryAbility` / `when: inuse`）⇒ HAR → HAP 合并**不丢** `reason` 与 `usedScene`；⬜ 仍待工单/真机侧确认「申请主体与包名」口径。
 - **🔶 沿用事实**：同型工程 dsh 已把该权限同时写进其 `web_engine` 的 `requestPermissions` 与 `definePermissions`，并在真机上正常运行；本工程照此落点，但**申请主体与包名必须换成本工程的**。
 - **⬜ 待实测的已知风险**：全新安装时受限权限可能被设备策略拒绝 → 需确认规避手段（dsh 的做法是日常用 `hdc app install -r` 覆盖安装绕过），并记录到 `docs/真机验证记录.md`。
 
@@ -81,7 +85,7 @@
 |---|---|---|---|---|---|
 | `ohos.permission.INTERNET` | `normal` | 9 | `system_grant` | 服务端 HTTP、provider 调用 | ✅ 必需 |
 | `ohos.permission.GET_NETWORK_INFO` | `normal` | 8 | `system_grant` | 选取局域网 IPv4（loopback 隔离的对策） | ✅ 必需 |
-| `ohos.permission.KEEP_BACKGROUND_RUNNING` | `normal` | 8 | `system_grant` | 配合 `module.json5` 的 `backgroundModes: ["taskKeeping"]` | ✅ 声明；但**不承诺保活效果**（见下） |
+| `ohos.permission.KEEP_BACKGROUND_RUNNING` | `normal` | 8 | `system_grant` | 配合 `module.json5` 的 `backgroundModes: ["taskKeeping"]` | ⬜ **待落地**（尚未写入任何 `module.json5`，见 §9）；且**不承诺保活效果**（见下） |
 | `ohos.permission.READ_WRITE_DOCUMENTS_DIRECTORY` | `normal` | 11 | `user_grant` | 文档目录项目根 | ✅ 必需（首次系统弹窗） |
 | `ohos.permission.READ_WRITE_DOWNLOAD_DIRECTORY` | `normal` | 11 | `user_grant` | 下载目录项目根 | ✅ 必需（首次系统弹窗） |
 | `ohos.permission.FILE_ACCESS_PERSIST` | `normal` | 11 | `system_grant` | 持久授权通道（Picker 路线） | ✅ 声明（路线本身 ⬜ 待验证） |
@@ -200,3 +204,13 @@
 |---|---|---|
 | v2 | 2026-10-14 | 按上游 `dsh-desktop-hos/docs/ACL申请清单-v1.md` 对齐本工程声明面：① `requestPermissions` 补齐 `READ_PASTEBOARD`、`READ_WRITE_DESKTOP_DIRECTORY`（均为 `system_basic`，需 ACL）；② 把 `READ_WRITE_DESKTOP_DIRECTORY` 从「明确不申请」移入「必须申请」，并同步把 `scripts/collect-runtime.mjs` 的相应断言从 FORBIDDEN 改为 REQUIRED；③ 4 个 `user_grant` 项的 `usedScene` 统一为 `EntryAbility` / `when: inuse`（原为不存在的 `FormAbility` / `always`）；④ `runtime-overlays/` 回盖源同步（md5 一致） |
 | v1 | 2026-10-11 | 首版落盘：判定规则、A1 JIT 受限权限、开放权限清单、明确不申请清单、AGC 提交手册 |
+
+### 11.1 回退口径（若上架受阻）
+
+若 `READ_WRITE_DESKTOP_DIRECTORY` 的 `system_basic` 在上架审核中被判定为障碍，按以下顺序回退（三步，缺一即回到不一致状态）：
+
+1. `web_engine/src/main/module.json5` **与** `runtime-overlays/web_engine/src/main/module.json5` 同时删除该项（两者必须保持同 md5）；
+2. `scripts/collect-runtime.mjs`：把 `'ohos.permission.READ_WRITE_DESKTOP_DIRECTORY'` 从 `REQUIRED_PERMISSIONS` 移回 `FORBIDDEN_PERMISSIONS`；
+3. 同步本文件 §1/§3.3/§7.2/§9、`specs/006-signing-identity/{spec,plan}.md`、`specs/011-workspace-auth/{spec,plan}.md`、`docs/工程规划-V2.md` §8.1/§8.3、`README.md`，并**重建发布 Profile**（ACL 变化后必须重建）。
+
+回退后重新执行 `node scripts/collect-runtime.mjs --verify-only`（阶段 10.6 应再次断言该权限**不存在**）。

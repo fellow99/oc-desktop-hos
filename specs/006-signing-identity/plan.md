@@ -11,7 +11,7 @@
 - 身份与权限的落地文件（均为工程内源码文件，参与构建）：
   - `AppScope/app.json5`：`bundleName`、`label`、`versionCode`、`versionName`、图标引用；
   - `electron/src/main/resources/{base,en_US,zh_CN}/element/string.json`：`EntryAbility_label`；
-  - `electron/src/main/module.json5`：开放权限（`requestPermissions`）；
+  - `electron/src/main/module.json5`：entry 模块清单（当前**没有** `requestPermissions`；`KEEP_BACKGROUND_RUNNING` / `backgroundModes` 仍为待落地项）；
   - `web_engine/src/main/module.json5`：权限声明面（`requestPermissions` + `definePermissions`，含 JIT 与 3 项 ACL）；`runtime-overlays/web_engine/src/main/module.json5` 为回盖源（同 md5）；
   - `hvigorfile.ts`：签名材料注入（`afterNodeEvaluate`）。
 - 运行时侧（harmonypc-electron）与身份相关的参考机制：`runtime-manifest.json` 的 `bundleNameRewrite.adapters`（4 个 ArkTS 适配文件各 1 处命中）——🔶 用于校验 `web_engine` 内是否残留旧 bundle 硬编码。
@@ -174,7 +174,7 @@ hdc shell "hilog -x | grep oc-desktop"
 | `electron/src/main/resources/base/element/string.json` | `EntryAbility_label`（基础） |
 | `electron/src/main/resources/en_US/element/string.json` | `EntryAbility_label`（英文） |
 | `electron/src/main/resources/zh_CN/element/string.json` | `EntryAbility_label`（中文） |
-| `electron/src/main/module.json5` | 开放权限声明（`requestPermissions`）与避免 `browsable`/`viewData` |
+| `electron/src/main/module.json5` | entry 模块清单（`browsable`/`viewData` 已避免；**当前无 `requestPermissions`**，开放权限统一落在 `web_engine`） |
 | `web_engine/src/main/module.json5` | 权限声明面（`requestPermissions` 8 项 + `definePermissions`，含 JIT 与 3 项 ACL）；`runtime-overlays/` 同文件为回盖源 |
 | `hvigorfile.ts` | 签名材料注入（`afterNodeEvaluate`，仅内存）+ release 守卫调用 |
 | `signing.debug.local.json.sample` / `signing.release.local.json.sample` | 材料模板（入库，无真实密钥） |
