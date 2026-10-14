@@ -42,7 +42,7 @@
 | 用例 | 关联 | 步骤 | 期望 | 结果 |
 |---|---|---|---|---|
 | JT-30 | AC-04 | 部署后读应用域 `<userData>/config/opencode/plugin/` | 两个插件目录存在 | ✅ | trace `[插件物化] 完成：2/2`；`opencode.log` 两条 `loading plugin`（§11.3） |
-| JT-31 | AC-04 | 比较包内与物化后文件 sha256 | 一致 | ✅ 构建期 7/7：`collect-app` → `投放后校验通过：7 个文件 sha256 与源一致`；**设备侧**（2026-10-14）两个 `index.js` `hdc file recv` 后 `md5sum` 与源一致（`254234df4c29…` / `b98e3245a585…`）；物化 = copy，非 symlink |
+| JT-31 | AC-04 | 比较包内与物化后文件 sha256 | 一致 | ✅ 构建期 7/7：`collect-app` → `投放后校验通过：7 个文件 sha256 与源一致`；**设备侧**（2026-10-14，随评审修复重测）两个 `index.js` `hdc file recv` 后 `md5sum` 与源一致（`0840bcecc56c…` / `b98e3245a585…`）；物化 = copy，非 symlink |
 | JT-32 | AC-05 | 应用域 `GET /api/plugin` | 两插件在清单中，且 `status != "failed"` | ⚠️ 以日志替代：凭据文件 0600 ⇒ 主机侧 `/api/*` 一律 401；改用 `opencode.log` 的 `loading plugin ×2` + 三工具端到端可调用（§11.3） |
 | JT-33 | AC-06 | 真实对话触发 `shell`：`pwd; uname -s` | 返回 stdout 且退出码 0 | ✅ `OC_SHELL_OK` / `20020217` / `aarch64` / `TMPDIR=…`，`[exit code: 0]`（§11.2） |
 | JT-34 | AC-06 | `shell`：`ls /nonexistent; echo rc=$?` | 返回非零退出码且 stderr 可见 | ✅ `ls: /nonexistent: No such file or directory` + `rc=1`（§11.2） |
