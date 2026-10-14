@@ -41,13 +41,15 @@
 
 | 用例 | 关联 | 步骤 | 期望 | 结果 |
 |---|---|---|---|---|
-| JT-30 | AC-04 | 部署后读应用域 `<userData>/config/opencode/plugin/` | 两个插件目录存在 | ⬜ |
-| JT-31 | AC-04 | 比较包内与物化后文件 sha256 | 一致 | ⬜ |
-| JT-32 | AC-05 | 应用域 `GET /api/plugin` | 两插件在清单中，且 `status != "failed"` | ⬜ |
-| JT-33 | AC-06 | 真实对话触发 `shell`：`pwd; uname -s` | 返回 stdout 且退出码 0 | ⬜ |
-| JT-34 | AC-06 | `shell`：`ls /nonexistent; echo rc=$?` | 返回非零退出码且 stderr 可见 | ⬜ |
-| JT-35 | AC-07 | 真实对话触发 `grep`：在沙箱工作区搜索已知串 | 命中且含行号 | ⬜ |
-| JT-36 | AC-07 | `glob`：列出工作区 `*.md` | 返回文件列表 | ⬜ |
-| JT-37 | AC-08 | `shell` 超时：`sleep 300` 且 `timeout` 设小值 | 明确超时错误；随后一次正常命令仍成功（shell 已重启） | ⬜ |
-| JT-38 | AC-09 | 不回归：一次普通对话（不调用工具） | 正常回复 | ⬜ |
-| JT-39 | 并发 | 同一会话内连续两次工具调用 | 不串输出（哨兵隔离） | ⬜ |
+| JT-30 | AC-04 | 部署后读应用域 `<userData>/config/opencode/plugin/` | 两个插件目录存在 | ✅ | trace `[插件物化] 完成：2/2`；`opencode.log` 两条 `loading plugin`（§11.3） |
+| JT-31 | AC-04 | 比较包内与物化后文件 sha256 | 一致 | ⚠️ 构建期强断言（`collect-app`：`投放后校验通过：7 个文件 sha256 与源一致`）；设备侧未逐字节比对（物化 = copy，非 symlink） |
+| JT-32 | AC-05 | 应用域 `GET /api/plugin` | 两插件在清单中，且 `status != "failed"` | ⚠️ 以日志替代：凭据文件 0600 ⇒ 主机侧 `/api/*` 一律 401；改用 `opencode.log` 的 `loading plugin ×2` + 三工具端到端可调用（§11.3） |
+| JT-33 | AC-06 | 真实对话触发 `shell`：`pwd; uname -s` | 返回 stdout 且退出码 0 | ✅ `OC_SHELL_OK` / `20020217` / `aarch64` / `TMPDIR=…`，`[exit code: 0]`（§11.2） |
+| JT-34 | AC-06 | `shell`：`ls /nonexistent; echo rc=$?` | 返回非零退出码且 stderr 可见 | ✅ `ls: /nonexistent: No such file or directory` + `rc=1`（§11.2） |
+| JT-35 | AC-07 | 真实对话触发 `grep`：在沙箱工作区搜索已知串 | 命中且含行号 | ✅ `Found 1 matches` + `probe.txt:` + `  Line 1: harmony tool probe`（§11.2） |
+| JT-36 | AC-07 | `glob`：列出工作区 `*.md` | 返回文件列表 | ✅ `glob *.txt` → `probe.txt`（§11.2） |
+| JT-37 | AC-08 | `shell` 超时：`sleep 300` 且 `timeout` 设小值 | 明确超时错误；随后一次正常命令仍成功（shell 已重启） | ✅ 3 s 超时丢弃常驻 shell；随后 `echo after-restart` → `after-restart`，`[exit code: 0] [10 ms]`（§11.2） |
+| JT-38 | AC-09 | 不回归：一次普通对话（不调用工具） | 正常回复 | ✅ 两轮（自我介绍、工具类提问）均正常（§11.2） |
+| JT-39 | 并发 | 同一会话内连续两次工具调用 | 不串输出（哨兵隔离） | ✅ 同轮 `grep` + `glob` 并行、`shell`(工具) 与 `shell`(超时) 连续调用，输出各自独立（§11.2） |
+| JT-40 | **契约（本轮新增）** | 工具层：`shellTool/grepTool/globTool` 的 `execute(input, ctx)` 返回值必须是 `Promise`（宿主 `Info.execute` 声明为 `Promise<Tool.Result>`，注册后直接 `.then(...)`） | 三个工具均「同步阶段不抛 + 返回 thenable + 结果含 `content`/`metadata`」 | ✅ 代码审查期发现的**真机缺陷 D3**（同步返回 → `internalCall(...).then is not a function`）；用例 `testToolContract()` 9 项 |
+| JT-41 | **契约（本轮新增）** | 工具层：宿主**总是**传 `context.signal`；`execute` 在该形态下不得抛异常（清理钩子不得引用跨作用域标识符） | 带未中断 signal → 正常返回；已中断 signal → 返回 killed 结果而非抛异常；非法参数 → `errorResult` | ✅ **真机缺陷 D2**（`onAbort is not defined`）；用例 `testShellToolExecute()` 6 项；反例已复现 |
