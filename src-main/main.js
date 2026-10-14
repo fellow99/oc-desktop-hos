@@ -93,7 +93,6 @@ process.on('uncaughtException', (error) => trace('UNCAUGHT_EXCEPTION', [error]))
 process.on('unhandledRejection', (reason) => trace('UNHANDLED_REJECTION', [reason]));
 
 /**
-/**
  * 设备运行时能力自证（Unicode 属性转义）。
  *
  * 为什么需要：上游产物在**模块初始化期**就会构造 `/^\p{Emoji}\p{Mark}*$/u` 这类正则
@@ -579,7 +578,6 @@ async function main() {
   // 启动即落一份「暂无失败」的状态文件：让设备侧能区分「没有失败」与「状态文件从未写出」
   // Unicode 属性转义自证必须在导入服务端产物之前：上游产物在**模块初始化期**就会构造 `\p{...}` 正则
   probeRuntimeCapabilities();
-  writeStartupStatus();
   writeStartupStatus();
   // 渲染层地址与端口在 app ready 前确定：Chromium 的安全来源开关只能在 ready 前设置
   lanAddress = process.env.OCR_LAN_ADDRESS || pickLanAddress();
