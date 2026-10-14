@@ -47,6 +47,23 @@ process.env.OPENCODE_DISABLE_MODELS_FETCH = process.env.OPENCODE_DISABLE_MODELS_
 process.env.OPENCODE_FILEWATCHER_DISABLE = process.env.OPENCODE_FILEWATCHER_DISABLE || '1';
 process.env.OPENCODE_DISABLE_FFF = process.env.OPENCODE_DISABLE_FFF || '1';
 
+// 服务端的「项目/工作区根」取自**进程工作目录**（产物里没有 --directory 之类的开关）。
+// 设备上 Electron 主进程的 cwd 是 `/`，而应用域读不了 `/`（EACCES），于是：
+//   - 服务器把 session 的 directory 记成 `/`；
+//   - `GET /api/fs/list` / `/api/fs/find` 直接 500；
+//   - 建会话时 `Session.create` 回读校验失败（UI 显示「服务器请求失败 HTTP 500」）。
+// 因此这里在导入产物**之前**把 cwd 切到沙箱内的工作区，并确保它存在
+// （这也是「沙箱里的测试目录」的来源；可用 OCR_WORKSPACE_DIR 覆盖）。
+const workspaceDir = process.env.OCR_WORKSPACE_DIR || path.join(process.env.HOME || runtimeDir, 'workspace');
+try {
+  fs.mkdirSync(workspaceDir, { recursive: true });
+  process.chdir(workspaceDir);
+  report(`工作区（服务端 cwd）= ${process.cwd()}`);
+} catch (error) {
+  // 不静默：切不动就把失败留在日志里，后面会话异常时能对上因果
+  report(`切换工作区失败（继续启动，会话可能不可用）: ${error && error.message}`);
+}
+
 // CLI 语义：serve（mode=default → 常驻，密码取自 OPENCODE_PASSWORD）
 process.argv = ['node', 'opencode.mjs', 'serve', '--hostname', hostname, '--port', String(port)];
 

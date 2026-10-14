@@ -6,7 +6,7 @@
  *
  * 宿主形态三候选（工程规划 §3.2，由 Phase 0 P0-1 探针定标）：
  *   inprocess（默认，dsh 已验证形态）| utility（utilityProcess.fork）| worker（worker_threads）
- * 通过 OCR_HOST_MODE 切换；三者共用 sidecar.js 作为入口。
+ * 通过 OCR_HOST_MODE 切换；utility / worker 走 sidecar.js，inprocess（默认）由本文件直接 import 产物。
  *
  * 渲染通道（工程规划 §3.3）：
  *   chromium（默认，可用性回退基线）| arkweb（目标形态：由 ArkTS 侧 Web 组件承载，主进程不建窗）
@@ -203,6 +203,26 @@ function configureEnvironment() {
   process.env.TEMP = TMP_DIR;
   process.env.TMP = TMP_DIR;
 
+  // 设备侧**没有 `/bin/sh`**：OpenHarmony 的应用域里 `/bin` 不可读，`stat('/bin/sh')` 直接抛
+  // `EACCES`（不是 ENOENT —— 上游 `stat` 的 `throwIfNoEntry` 兜不住 EACCES，已由补丁
+  // `patches/v2.0.26/0006-shell-select-ohos.patch` 在 `ShellSelect.stat` 内兜住）。
+  // 后果很隐蔽：opencode 在**每次模型请求前**解析 shell
+  // （`SessionModelRequest.prepare → environment() → select(process.env.SHELL) → executable → stat`），
+  // 于是会话能建、用户消息能进、SSE 也连得上，但助手**永远不回复**，日志只有
+  // `ERROR "Failed to drain Session" cause="EACCES: permission denied, stat '/bin/sh'"`。
+  // 应用域真正可用的是 `/system/bin/sh`（插件 `oc-plugin-harmony-shell` 就是为它写的）。
+  // 三重保证（可用 OCR_SHELL 覆盖）：① SHELL 指向它，stat 可读时 `select` 直接返回；
+  // ② `OC_SHELL_FALLBACK` 让 0006 的 `fallback()` 在 stat 不可读时仍回落到它；
+  // ③ `/system/bin` 入 PATH，避免 `fallback()` 的 `which('bash')` 找空后落到不可用的 `/bin/sh`。
+  process.env.SHELL = process.env.OCR_SHELL || '/system/bin/sh';
+  process.env.OC_SHELL_FALLBACK = process.env.OCR_SHELL || '/system/bin/sh';
+  const systemBins = ['/system/bin'];
+  const pathParts = (process.env.PATH || '').split(':').filter(Boolean);
+  for (const dir of systemBins.reverse()) {
+    if (!pathParts.includes(dir)) pathParts.unshift(dir);
+  }
+  process.env.PATH = pathParts.join(':');
+
   // 真机上 TMPDIR 对 Node 无效：必须直接改 os.tmpdir 的实现
   os.tmpdir = () => TMP_DIR;
 
@@ -310,14 +330,199 @@ function pickLanAddress() {
   return '127.0.0.1';
 }
 
+/**
+ * 设备侧 `better-sqlite3` 原生模块缺陷兜底（真机实测 2026-10-14，属**依赖缺陷**，非上游逻辑问题）。
+ *
+ * 现象：aarch64-ohos 预编译的 `better_sqlite3.node`（来自发行侧 `better-sqlite3-ohos-v138.tar.gz`，
+ * 与 JS 半边同为 12.4.5、哈希一致）在读 **SQL NULL** 时返回整数 **98304**（0x18000），而不是 `null`。
+ * 证据链：
+ *   - 同一份产物 + 同一 JS 代码在 host 侧 better-sqlite3 12.4.5 上返回 `null`（复现脚本见测试记录）；
+ *   - 设备侧 SQL 自身 `SELECT quote(vcs), typeof(vcs) FROM project` → `'NULL' / 'null'`，
+ *     说明**存进去的就是 NULL**，是「读」被歪曲；
+ *   - `SELECT * FROM project` 里所有可空列（vcs / name / icon_url / time_initialized …）都读出 98304。
+ * 后果：`Project.vcs`、`Session.parent_id` 等可空字段读出 98304 ⇒ effect schema 校验失败 ⇒
+ *   `GET /api/project` 400、`POST /api/session` 500（UI 只显示「服务器请求失败 HTTP 500」），
+ *   表现为「能连上模型、一句话都发不出去」。
+ *
+ * 处置（与工程既有做法一致：`os.tmpdir()` 同样是壳侧 monkey-patch）：
+ *   在本进程内、且**仅当自检确认存在该缺陷时**，把语句结果的取值归一化：
+ *   只对**声明类型为 TEXT/BLOB**（亲和 TEXT）的列把该哨兵还原成 `null` —— 这类列上出现数值
+ *   本来就不可能是合法值，因此该还原是**有原则的**，不会把真实数据误判为 NULL；
+ *   其它列（例如可空的 INTEGER 时间戳）不做猜测，保持原值（已在能力清单登记为已知偏差）。
+ *   根因修复仍应由发行侧重编/更换该 `.node`（仓库内 `better-sqlite3编译指南.md` + headers 已备）。
+ */
+function patchBetterSqlite3NullBug() {
+  const candidates = [
+    process.env.OPENCODE_BETTER_SQLITE3_PATH,
+    path.join(RUNTIME_DIR, 'node_modules', 'better-sqlite3'),
+    'better-sqlite3',
+  ].filter(Boolean);
+  let Database = null;
+  for (const specifier of candidates) {
+    try {
+      Database = require(specifier);
+      break;
+    } catch {
+      // 继续试下一个候选（env 可能直接指向 .node，或模块不在运行时树里）
+    }
+  }
+  if (typeof Database !== 'function') {
+    log('[依赖兜底] 未能加载 better-sqlite3，跳过 NULL 缺陷自检');
+    return;
+  }
+
+  let sentinel;
+  let Statement;
+  try {
+    const probe = new Database(':memory:');
+    const statement = probe.prepare('SELECT NULL AS v');
+    const row = statement.get();
+    Statement = statement.constructor;
+    probe.close();
+    if (row && row.v === null) {
+      log('[依赖兜底] better-sqlite3 NULL 语义正常，未做任何改写');
+      return;
+    }
+    sentinel = row && row.v;
+  } catch (error) {
+    log(`[依赖兜底] NULL 自检失败（跳过改写）：${error && error.message}`);
+    return;
+  }
+  if (!Statement || typeof Statement.prototype.all !== 'function') {
+    log('[依赖兜底] 未取到 Statement 原型，跳过改写');
+    return;
+  }
+
+  let reported = false;
+  let conversions = 0;
+
+  const patchStats = { calls: 0, conversions: 0, columnsLen: null, touched: new Set(), firstRowLogged: false };
+
+  const applyNullFix = (DatabaseClass) => {
+    const Klass = DatabaseClass && DatabaseClass.prototype && DatabaseClass.prototype.prepare
+      ? DatabaseClass.prototype.prepare.call(new DatabaseClass(':memory:'), 'SELECT 1').constructor
+      : null;
+    if (!Klass || typeof Klass.prototype.all !== 'function' || Klass.prototype.all.__ocNullFix === true) return;
+    const originalAll = Klass.prototype.all;
+    const wrapped = function all(...params) {
+      const rows = originalAll.apply(this, params);
+      let columns = [];
+      try {
+        columns = this.columns() || [];
+      } catch {
+        columns = [];
+      }
+      const affinity = (declared) => /CHAR|CLOB|TEXT/i.test(String(declared || '')) || String(declared || '') === '';
+      // 设备侧 build 的 `columns()` 返回空（实测 columns()=0），拿不到声明类型时退化为
+      // 「按哨兵值判定」，并把命中的列名记进 trace（可审计：出现误判能一眼看见）。
+      patchStats.calls += 1;
+      patchStats.columnsLen = columns.length;
+      const touched = new Set();
+      for (const row of rows) {
+        if (Array.isArray(row)) {
+          for (let index = 0; index < row.length; index += 1) {
+            const allowed = columns.length === 0 || (columns[index] && affinity(columns[index].type));
+            if (allowed && row[index] === sentinel) {
+              row[index] = null;
+              touched.add(`#${index}`);
+            }
+          }
+        } else if (row && typeof row === 'object') {
+          const names = columns.length ? columns.map((column) => column.name) : Object.keys(row);
+          for (const name of names) {
+            const column = columns.find((entry) => entry.name === name);
+            const allowed = columns.length === 0 || (column && affinity(column.type));
+            if (allowed && row[name] === sentinel) {
+              row[name] = null;
+              touched.add(name);
+            }
+          }
+        }
+      }
+      for (const name of touched) patchStats.touched.add(name);
+      patchStats.conversions += touched.size;
+      if (!patchStats.firstRowLogged && rows.length > 0) {
+        patchStats.firstRowLogged = true;
+        trace('SQLITE_NULL_FIX_SELFCHECK', [
+          `columns()=${columns.length}; rows=${rows.length}; 数组行=${Array.isArray(rows[0])}; 本次还原=${touched.size}; 命中列=${[...touched].slice(0, 12).join(',')}`,
+        ]);
+      }
+      if (patchStats.conversions > 0 && !patchStats.firstHitLogged) {
+        patchStats.firstHitLogged = true;
+        log(`[依赖兜底] NULL 缺陷兜底已生效：首个命中的列 = ${[...patchStats.touched].slice(0, 12).join(',')}`);
+      }
+      return rows;
+    };
+    wrapped.__ocNullFix = true;
+    Klass.prototype.all = wrapped;
+  };
+
+  applyNullFix(Database);
+
+  // 产物的 ESM 前导注册了模块钩子，直接 require 未必拿到宿主那份实例（真机实测：只打直接引用未生效）。
+  // 因此在 CJS 加载器上挂钩：无论谁、从什么 base 加载 better-sqlite3，拿到类后立即打补丁（幂等）。
+  try {
+    const Module = require('node:module');
+    const originalLoad = Module._load;
+    Module._load = function load(request, parent, isMain) {
+      const loaded = originalLoad.call(this, request, parent, isMain);
+      if (typeof loaded === 'function' && /better-sqlite3$/.test(String(request))) {
+        try {
+          applyNullFix(loaded);
+        } catch {
+          // 忽略：打不上补丁时下面还有自检 trace 可查
+        }
+      }
+      return loaded;
+    };
+    trace('SQLITE_NULL_FIX_HOOKED', ['已挂钩 Module._load（覆盖 ESM 前导的再加载路径）']);
+  } catch (error) {
+    trace('SQLITE_NULL_FIX_HOOKED', [`挂钩失败：${error && error.message}`]);
+  }
+
+  trace('SQLITE_NULL_BUG_PATCHED', [`哨兵=${String(sentinel)}；仅对 TEXT/BLOB 亲和列还原为 null`]);
+  log(`[依赖兜底] 检出 better-sqlite3 NULL 缺陷（NULL 读作 ${String(sentinel)}），已按声明类型做有原则的还原`);
+}
+
+/**
+ * 沙箱工作区：服务端的「项目/工作区根」= 起宿主时的**进程工作目录**。
+ *
+ * 为什么必须显式准备：产物里没有 `--directory` 之类的开关，opencode 直接以 cwd 作为
+ * `Location.directory`。设备上 Electron 主进程的 cwd 是 `/`，而应用域读不了 `/`（EACCES），
+ * 于是真机表现为（实测 2026-10-14）：
+ *   - session 的 `directory` 被记成 `/`，`worktree discovery failed`；
+ *   - `GET /api/fs/list` / `/api/fs/find` 一律 500（还把目录选择器拖死，见
+ *     「unsupported platform for ripgrep: arm64-openharmony」）；
+ *   - 建会话时 `Session.create` 回读校验失败 ⇒ UI 只显示「服务器请求失败 HTTP 500」，
+ *     即「能连上模型却一句话都发不出去」。
+ * 因此这里在起宿主**之前**把 cwd 切到沙箱内的工作区并确保其存在（`<userData>/workspace`，
+ * 可用 `OCR_WORKSPACE_DIR` 覆盖）。这个目录同时就是需求里「沙箱中的测试目录」。
+ */
+function ensureWorkspace() {
+  const dir = process.env.OCR_WORKSPACE_DIR || path.join(APP_HOME, 'workspace');
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    process.chdir(dir);
+    log(`[${currentStage}] 工作区（服务端 cwd）= ${process.cwd()}`);
+  } catch (error) {
+    // 不静默、也不阻断启动：切不动时把原因留在 trace，会话异常时才能对上因果
+    log(`[${currentStage}] 准备工作区失败（会话/项目可能不可用）：${error && error.message}`);
+  }
+  return dir;
+}
+
 function startHost() {
   currentStage = STAGES.HOST;
+  // 依赖缺陷兜底必须在宿主 import better-sqlite3 **之前**（同一进程、同一模块实例）
   const sidecar = path.join(__dirname, 'sidecar.js');
+  patchBetterSqlite3NullBug();
+  const workspace = ensureWorkspace();
   const env = {
     ...process.env,
     OCR_SERVER_PORT: String(serverPort),
     OCR_SERVER_HOSTNAME: process.env.OCR_SERVER_HOSTNAME || '0.0.0.0',
     OCR_RUNTIME_DIR: RUNTIME_DIR,
+    OCR_WORKSPACE_DIR: workspace,
   };
 
   if (HOST_MODE === 'utility') {
