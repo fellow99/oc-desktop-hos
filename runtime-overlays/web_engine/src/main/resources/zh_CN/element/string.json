@@ -1,0 +1,124 @@
+{
+  "string": [
+    {
+      "name": "page_show",
+      "value": "page from package"
+    },
+    {
+      "name": "button_ok",
+      "value": "确认"
+    },
+    {
+      "name": "button_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "print_title",
+      "value": "打印提示"
+    },
+    {
+      "name": "print_tip",
+      "value": "预览数据未完成加载，请加载完毕后打印！"
+    },
+    {
+      "name": "print_ok",
+      "value": "确认"
+    },
+    {
+      "name": "access_pasteboard",
+      "value": "用于将剪贴板中的文本或图片粘贴到对话输入框"
+    },
+    {
+      "name": "download_dir",
+      "value": "用于在应用内文件选择器中直接读取或保存下载目录中的文件"
+    },
+    {
+      "name": "distributed_datasync",
+      "value": "是否允许不同设备间的数据交换"
+    },
+    {
+      "name": "documents_dir",
+      "value": "用于在应用内文件选择器中直接读取或保存文档目录中的文件"
+    },
+    {
+      "name": "desktop_dir",
+      "value": "用于在应用内文件选择器中直接读取或保存桌面目录中的文件"
+    },
+    {
+      "name": "inherit_parent_permission",
+      "value": "用于让随包签名 Node 运行时继承父进程权限，使内置插件市场能安装插件"
+    },
+    {
+      "name": "ignore_library_validation",
+      "value": "用于加载随包签名的 Node 运行时动态库并跳过库校验"
+    },
+    {
+      "name": "exempt_anonymous_executable_memory",
+      "value": "用于让随包签名的 Node 运行时申请匿名可执行内存（JIT）"
+    },
+    {
+      "name": "upload_default_type_description",
+      "value": "自定义文件"
+    },
+    {
+      "name": "upload_all_file_description",
+      "value": "所有文件(*.*)"
+    },
+    {
+      "name": "screen_capture",
+      "value": "用于应用内截图功能"
+    },
+    {
+      "name": "screenshot",
+      "value": "是否允许屏幕截图"
+    },
+    {
+      "name": "pasteBoard_dialog_title",
+      "value": "无法访问系统剪贴板"
+    },
+    {
+      "name": "screenshot_dialog_title",
+      "value": "无法访问系统截屏"
+    },
+    {
+      "name": "pasteBoard_dialog_content",
+      "value": "您已关闭剪贴板的访问权限，建议前往设置-> 隐私与安全-> 剪贴板，开启 label 的剪贴板访问权限"
+    },
+    {
+      "name": "screenshot_dialog_content",
+      "value": "您已关闭截屏的访问权限，建议前往设置-> 隐私与安全-> 截屏，开启 label 的截屏访问权限"
+    },
+    {
+      "name": "dialog_confirm_button",
+      "value": "前往系统设置"
+    },
+    {
+      "name": "file_name_str",
+      "value": "名称:"
+    },
+    {
+      "name": "file_size_str",
+      "value": "大小:"
+    },
+    {
+      "name": "dialog_cancel_button",
+      "value": "取消"
+    },
+    {
+      "name": "go_to_app_gallery",
+      "value": "前往应用市场搜索"
+    },
+    {
+      "name": "download",
+      "value": "下载"
+    },
+    {
+      "name": "still_download",
+      "value": "仍要下载"
+    },
+    {
+      "name": "installation_not_supported",
+      "value": "不支持安装此格式文件"
+    }
+  ]
+}

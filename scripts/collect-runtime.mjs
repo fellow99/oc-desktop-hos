@@ -102,8 +102,15 @@ const APP_RESFILE_DIR = 'web_engine/src/main/resources/resfile/resources/app';
 
 /**
  * runtime-overlays/ 回盖白名单（相对工程根的镜像路径）。
- * 全部为**本应用定制**：模块清单（权限/后台保活）与显示名资源（三套 locale）。
+ * 全部为**本应用定制**：模块清单（权限 / 后台保活）、显示名资源（三套 locale），以及
+ * `web_engine` 的权限 `reason` 文案（三套 locale）。
  * 阶段 10.7 逐一做源/目标 md5 一致性守卫 —— 覆盖缺失即硬失败。
+ *
+ * 与 `dsh-desktop-hos/scripts/collect-runtime.mjs` 对齐（2026-10-14）：dsh 同样把
+ * `web_engine/src/main/resources/<locale>/element/string.json` 列入白名单 —— 上游外壳的这三份资源
+ * 不带 `INHERIT_PARENT_PERMISSION` / `kernel.IGNORE_LIBRARY_VALIDATION` /
+ * `kernel.EXEMPT_ANONYMOUS_EXECUTABLE_MEMORY` 的 `reason` key，且目录/剪贴板/截屏 5 条文案
+ * 仍是 `... requires user_grant permission` 占位串。
  */
 const OVERLAY_FILES = [
   'electron/src/main/module.json5',
@@ -111,6 +118,9 @@ const OVERLAY_FILES = [
   'electron/src/main/resources/en_US/element/string.json',
   'electron/src/main/resources/zh_CN/element/string.json',
   'web_engine/src/main/module.json5',
+  'web_engine/src/main/resources/base/element/string.json',
+  'web_engine/src/main/resources/en_US/element/string.json',
+  'web_engine/src/main/resources/zh_CN/element/string.json',
 ];
 
 /**
@@ -163,50 +173,93 @@ const APP_KEEP = new Set([
 ]);
 
 /**
- * 权限断言：必须**不得**出现的受限/上架障碍权限（工程规划 §8.3）。
- * 例外：`READ_WRITE_DESKTOP_DIRECTORY` 自 006-signing-identity 对齐
- * `dsh-desktop-hos/docs/ACL申请清单-v1.md` 后**改为声明并随批次申请**（见 REQUIRED_PERMISSIONS），
- * 因此从本表移除；上架前仍须按 `docs/ACL申请清单.md` §7.3 ⬜-6 复核是否保留。
+ * 权限断言（**全部对齐 `dsh-desktop-hos`** 的 `web_engine/src/main/module.json5`，2026-10-14）：
+ *  - FORBIDDEN / PRUNED：必须**不得**出现；
+ *  - REQUIRED：必须出现（23 项，与 dsh 同序）；
+ *  - REASON_REQUIRED：必须带 `reason` + `usedScene`；
+ *  - DUAL_DECLARED：必须同时出现在 `requestPermissions` 与 `definePermissions`。
+ * 断言实现见 stage10Guards 10.6 / 10.6b / 10.6c。
  */
+
+/** 必须**不得**出现的受限/上架障碍权限（工程规划 §8.3；dsh 与本工程均不声明） */
 const FORBIDDEN_PERMISSIONS = [
-  'ohos.permission.PRINT',
   'ohos.permission.CUSTOM_SANDBOX',
   'ohos.permission.RUN_ANY_CODE',
-  // ⚠️ 真实权限名带 `kernel.` 前缀（原表写成 `ohos.permission.LOAD_INDEPENDENT_LIBRARY`，
-  //    该名字不存在 ⇒ 声明真名时本断言不会命中，属静默失效，2026-10-14 修正）
+  // ⚠️ 真实权限名带 `kernel.` 前缀（早期写成 `ohos.permission.LOAD_INDEPENDENT_LIBRARY`，
+  //    该名字不存在 ⇒ 声明真名时断言不会命中，属静默失效，2026-10-14 修正）
   'ohos.permission.kernel.LOAD_INDEPENDENT_LIBRARY',
   'ohos.permission.ALLOW_EXTERNAL_NATIVE_CODE',
 ];
 
 /**
- * 权限断言：必须**存在**的权限（对齐 `docs/ACL申请清单.md` §1 的 6 项：
- * 3 项需 ACL + 3 项开放权限，另有本工程自用的 INTERNET / GET_NETWORK_INFO）。
+ * 上游外壳（harmonypc-electron v37.2.3）默认声明、但 **dsh 与本工程都剪掉**的 10 项：
+ * 相机 / 麦克风 / 定位（含后台）/ 蓝牙 / 分布式数据同步 / 系统悬浮窗 / 窗口透明 / Web 原生消息。
+ * 断言其**不存在**，防止将来重新拷贝外壳时权限面被悄悄放大。
  */
+const PRUNED_PERMISSIONS = [
+  'ohos.permission.SYSTEM_FLOAT_WINDOW',
+  'ohos.permission.DISTRIBUTED_DATASYNC',
+  'ohos.permission.SET_WINDOW_TRANSPARENT',
+  'ohos.permission.LOCATION',
+  'ohos.permission.APPROXIMATELY_LOCATION',
+  'ohos.permission.LOCATION_IN_BACKGROUND',
+  'ohos.permission.MICROPHONE',
+  'ohos.permission.CAMERA',
+  'ohos.permission.ACCESS_BLUETOOTH',
+  'ohos.permission.WEB_NATIVE_MESSAGING',
+];
+
+/** 必须**存在**的权限：`web_engine` 的 23 项（与 dsh 逐项同序，2026-10-14） */
 const REQUIRED_PERMISSIONS = [
   'ohos.permission.INTERNET',
   'ohos.permission.GET_NETWORK_INFO',
-  'ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY',
-  'ohos.permission.READ_PASTEBOARD',
-  'ohos.permission.READ_WRITE_DESKTOP_DIRECTORY',
-  'ohos.permission.READ_WRITE_DOCUMENTS_DIRECTORY',
-  'ohos.permission.READ_WRITE_DOWNLOAD_DIRECTORY',
+  'ohos.permission.ACCESS_CERT_MANAGER',
+  'ohos.permission.RUNNING_LOCK',
+  'ohos.permission.PRINT',
+  'ohos.permission.PREPARE_APP_TERMINATE',
+  'ohos.permission.ACCESS_BIOMETRIC',
   'ohos.permission.FILE_ACCESS_PERSIST',
+  'ohos.permission.PRIVACY_WINDOW',
+  'ohos.permission.WINDOW_TOPMOST',
+  'ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY',
+  'ohos.permission.INHERIT_PARENT_PERMISSION',
+  'ohos.permission.kernel.IGNORE_LIBRARY_VALIDATION',
+  'ohos.permission.kernel.EXEMPT_ANONYMOUS_EXECUTABLE_MEMORY',
+  'ohos.permission.GYROSCOPE',
+  'ohos.permission.ACCELEROMETER',
+  'ohos.permission.GET_FILE_ICON',
+  'ohos.permission.LOCK_WINDOW_CURSOR',
+  'ohos.permission.READ_PASTEBOARD',
+  'ohos.permission.READ_WRITE_DOWNLOAD_DIRECTORY',
+  'ohos.permission.READ_WRITE_DOCUMENTS_DIRECTORY',
+  'ohos.permission.READ_WRITE_DESKTOP_DIRECTORY',
+  'ohos.permission.CUSTOM_SCREEN_CAPTURE',
 ];
 
 /**
- * `user_grant` 权限（`docs/ACL申请清单.md` §1 的 #2–#5）。
- * 这些项**必须**带 `reason` + `usedScene`，否则系统授予弹窗/上架审核会缺材料；
+ * 必须带 `reason` + `usedScene` 的项（dsh 对这 8 项都带；`reason` 指向
+ * `web_engine/src/main/resources/<locale>/element/string.json` 的 key）。
  * 断言实现见 stage10Guards 10.6b（定位条目本体直到其 `}`，再断言含 `usedScene`），
  * 以容忍 json5 注释与字段顺序变化。
  */
-const USER_GRANT_PERMISSIONS = [
+const REASON_REQUIRED_PERMISSIONS = [
+  'ohos.permission.INHERIT_PARENT_PERMISSION',
+  'ohos.permission.kernel.IGNORE_LIBRARY_VALIDATION',
+  'ohos.permission.kernel.EXEMPT_ANONYMOUS_EXECUTABLE_MEMORY',
   'ohos.permission.READ_PASTEBOARD',
-  'ohos.permission.READ_WRITE_DESKTOP_DIRECTORY',
-  'ohos.permission.READ_WRITE_DOCUMENTS_DIRECTORY',
   'ohos.permission.READ_WRITE_DOWNLOAD_DIRECTORY',
+  'ohos.permission.READ_WRITE_DOCUMENTS_DIRECTORY',
+  'ohos.permission.READ_WRITE_DESKTOP_DIRECTORY',
+  'ohos.permission.CUSTOM_SCREEN_CAPTURE',
 ];
 
-/** JIT 权限（V8 必需，须同时出现在 requestPermissions 与 definePermissions） */
+/** 必须**同时**出现在 `requestPermissions` 与 `definePermissions` 的项（各恰好 2 处） */
+const DUAL_DECLARED_PERMISSIONS = [
+  'ohos.permission.LOCK_WINDOW_CURSOR',
+  'ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY',
+];
+
+/** JIT 权限（V8 必需；`DUAL_DECLARED_PERMISSIONS` 的特例，保留独立常量供文档/守卫引用） */
 const JIT_PERMISSION = 'ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY';
 
 /**
@@ -639,30 +692,55 @@ function stage10Guards(manifest) {
     guard(isFile(p) && readText(p).includes(EXPECTED_APP_LABEL), `EntryAbility_label(${locale}) = ${EXPECTED_APP_LABEL}`);
   }
 
-  // 10.6 权限集断言（对齐 docs/ACL申请清单.md 的 6 项 + 本工程自用开放权限）
+  // 10.6 权限集断言（**逐项对齐 dsh-desktop-hos** 的 web_engine module.json5，2026-10-14）
   const webEngineManifest = join(PROJECT_ROOT, 'web_engine', 'src', 'main', 'module.json5');
   if (isFile(webEngineManifest)) {
     const text = readText(webEngineManifest);
     for (const permission of FORBIDDEN_PERMISSIONS) {
       guard(!text.includes(permission), `未声明受限权限 ${permission}`);
     }
+    for (const permission of PRUNED_PERMISSIONS) {
+      guard(!text.includes(permission), `未声明已剪裁权限 ${permission}`);
+    }
     for (const permission of REQUIRED_PERMISSIONS) {
       guard(text.includes(permission), `已声明权限 ${permission}`);
     }
-    // 10.6b `user_grant` 项必须带 reason + usedScene（specs/006 FR-006-012 / FR-006-026）
+    // 10.6b 带 `reason` 的项必须同时带 `usedScene`（specs/006 FR-006-012 / FR-006-026）
     // 匹配口径：先按 `"name": "<perm>"` 定位条目，再取到**该条目自身的 `}`** 为止（`[\s\S]*?` 在
     // 第一个 `}` 处停止 ⇒ 恰好覆盖嵌套的 `usedScene` 对象），最后断言该片段含 `usedScene`。
     // 不用「N 字符窗口」——那样会被**相邻条目**的 usedScene 误判为通过（负向用例已实测）。
-    for (const permission of USER_GRANT_PERMISSIONS) {
+    for (const permission of REASON_REQUIRED_PERMISSIONS) {
       const entry = text.match(
         new RegExp(`\\{\\s*"name"\\s*:\\s*"${permission.replace(/\./g, '\\.')}"[\\s\\S]*?\\}`),
       );
-      guard(Boolean(entry) && entry[0].includes('usedScene'), `user_grant 权限带 usedScene ${permission}`);
+      guard(
+        Boolean(entry) && entry[0].includes('usedScene'),
+        `带 reason 的权限同时带 usedScene ${permission}`,
+      );
     }
-    const jitHits = text.split(JIT_PERMISSION).length - 1;
-    guard(jitHits === 2, `JIT 权限出现在 requestPermissions + definePermissions 两处（实际 ${jitHits} 处）`);
+    // 10.6c 必须同时出现在 requestPermissions 与 definePermissions 的项（各恰好 2 处）
+    for (const permission of DUAL_DECLARED_PERMISSIONS) {
+      const hits = text.split(permission).length - 1;
+      guard(
+        hits === 2,
+        `${permission} 出现在 requestPermissions + definePermissions 两处（实际 ${hits} 处）`,
+      );
+    }
   } else {
     guard(false, `web_engine module.json5 存在 ${webEngineManifest}`);
+  }
+
+  // 10.6d entry 模块：后台保活声明（对齐 dsh 的 electron/src/main/module.json5）
+  const entryManifest = join(PROJECT_ROOT, 'electron', 'src', 'main', 'module.json5');
+  if (isFile(entryManifest)) {
+    const text = readText(entryManifest);
+    guard(text.includes('ohos.permission.KEEP_BACKGROUND_RUNNING'), 'entry 已声明 KEEP_BACKGROUND_RUNNING');
+    guard(text.includes('"taskKeeping"'), 'entry EntryAbility 已声明 backgroundModes: ["taskKeeping"]');
+    for (const permission of PRUNED_PERMISSIONS) {
+      guard(!text.includes(permission), `entry 未声明已剪裁权限 ${permission}`);
+    }
+  } else {
+    guard(false, `electron module.json5 存在 ${entryManifest}`);
   }
 
   // 10.7 overlay 命中（源/目标一致）

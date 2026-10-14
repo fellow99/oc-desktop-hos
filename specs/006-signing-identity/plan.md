@@ -11,8 +11,8 @@
 - 身份与权限的落地文件（均为工程内源码文件，参与构建）：
   - `AppScope/app.json5`：`bundleName`、`label`、`versionCode`、`versionName`、图标引用；
   - `electron/src/main/resources/{base,en_US,zh_CN}/element/string.json`：`EntryAbility_label`；
-  - `electron/src/main/module.json5`：entry 模块清单（当前**没有** `requestPermissions`；`KEEP_BACKGROUND_RUNNING` / `backgroundModes` 仍为待落地项）；
-  - `web_engine/src/main/module.json5`：权限声明面（`requestPermissions` + `definePermissions`，含 JIT 与 3 项 ACL）；`runtime-overlays/web_engine/src/main/module.json5` 为回盖源（同 md5）；
+  - `electron/src/main/module.json5`：entry 模块清单（`requestPermissions: [KEEP_BACKGROUND_RUNNING]` + EntryAbility `backgroundModes: ["taskKeeping"]`）；
+  - `web_engine/src/main/module.json5`：权限声明面（`requestPermissions` 23 项 + `definePermissions` 2 项，含 JIT 与 3 项 ACL）；`runtime-overlays/web_engine/src/main/module.json5` 为回盖源（同 md5）；
   - `hvigorfile.ts`：签名材料注入（`afterNodeEvaluate`）。
 - 运行时侧（harmonypc-electron）与身份相关的参考机制：`runtime-manifest.json` 的 `bundleNameRewrite.adapters`（4 个 ArkTS 适配文件各 1 处命中）——🔶 用于校验 `web_engine` 内是否残留旧 bundle 硬编码。
 
@@ -40,7 +40,7 @@
 | ACL 归属 | 按本包名单独申请 3 项受限权限（JIT / `READ_PASTEBOARD` / `READ_WRITE_DESKTOP_DIRECTORY`） | 工程规划 §3.7、§8.1；上游 `ACL申请清单-v1.md` |
 | 权限声明纪律 | 只声明实际使用项；本批 ACL 共 3 项（JIT + `READ_PASTEBOARD` + `READ_WRITE_DESKTOP_DIRECTORY`），其余受限项一律不申请 | FR-006-011 / 013 / 025；§8.3 |
 | JIT 权限 | `ALLOW_WRITABLE_CODE_MEMORY` 同时进 `requestPermissions` 与 `definePermissions` | 引擎必需，不可删 |
-| ACL 清单对齐 | 按上游 `dsh-desktop-hos/docs/ACL申请清单-v1.md` §1 的 6 项逐项核对本工程声明面，差异以「补齐声明」消除 | spec FR-006-025（2026-10-14） |
+| ACL 清单对齐 | 与 `dsh-desktop-hos` 的**实际声明**逐项对标（`web_engine` 23 项 + `definePermissions` 2 项、entry `KEEP_BACKGROUND_RUNNING` + `backgroundModes`、8 条 `reason`），差异以「补齐声明」消除 | spec FR-006-012 / FR-006-025（2026-10-14） |
 | versionCode | 严格递增 + release 守卫（基线在 `docs/上架合规清单.md`） | §8.5 G7 |
 | versionName | 与上游基线可读关联，职责与 `versionCode` 分离 | 上架信息一致性 |
 | 图标守卫 | 解析 PNG IHDR 颜色类型判定 Alpha（4/6 带 Alpha） | §8.5 G2；无需图像库 |
@@ -102,7 +102,7 @@ identity-check（三处 label 一致 + 包名唯一）→ version-check（releas
 | `scripts/lib/version-guard.mjs` | `versionCode` 递增守卫（对比 `docs/上架合规清单.md` 基线） |
 | `scripts/lib/png-guard.mjs` | 图标 Alpha 守卫（PNG `IHDR` 解析） |
 | `AppScope/app.json5` | `bundleName` / `label` / `versionCode` / `versionName` 的单一来源 |
-| `web_engine/src/main/module.json5` | 受限权限 `definePermissions`（含 JIT 权限）与开放权限声明（含 3 项 ACL：JIT / `READ_PASTEBOARD` / `READ_WRITE_DESKTOP_DIRECTORY`） |
+| `web_engine/src/main/module.json5` | 权限声明面（`requestPermissions` 23 项 + `definePermissions` 2 项；含 3 项需 ACL：JIT / `READ_PASTEBOARD` / `READ_WRITE_DESKTOP_DIRECTORY`） |
 
 ### 4.2 本模块消费
 
@@ -174,8 +174,9 @@ hdc shell "hilog -x | grep oc-desktop"
 | `electron/src/main/resources/base/element/string.json` | `EntryAbility_label`（基础） |
 | `electron/src/main/resources/en_US/element/string.json` | `EntryAbility_label`（英文） |
 | `electron/src/main/resources/zh_CN/element/string.json` | `EntryAbility_label`（中文） |
-| `electron/src/main/module.json5` | entry 模块清单（`browsable`/`viewData` 已避免；**当前无 `requestPermissions`**，开放权限统一落在 `web_engine`） |
-| `web_engine/src/main/module.json5` | 权限声明面（`requestPermissions` 8 项 + `definePermissions`，含 JIT 与 3 项 ACL）；`runtime-overlays/` 同文件为回盖源 |
+| `electron/src/main/module.json5` | entry 模块清单（`browsable`/`viewData` 已避免；`requestPermissions` = `KEEP_BACKGROUND_RUNNING`，EntryAbility 带 `backgroundModes: ["taskKeeping"]`） |
+| `web_engine/src/main/module.json5` | 权限声明面（`requestPermissions` 23 项 + `definePermissions` 2 项）；`runtime-overlays/` 同文件 + 三套 locale `string.json` 为回盖源 |
+| `electron/src/main/module.json5` | entry 模块权限声明面（`KEEP_BACKGROUND_RUNNING` + EntryAbility `backgroundModes: ["taskKeeping"]`）；`runtime-overlays/` 同文件为回盖源 |
 | `hvigorfile.ts` | 签名材料注入（`afterNodeEvaluate`，仅内存）+ release 守卫调用 |
 | `signing.debug.local.json.sample` / `signing.release.local.json.sample` | 材料模板（入库，无真实密钥） |
 | `scripts/lib/identity.mjs` / `version-guard.mjs` / `png-guard.mjs` | 身份、版本、图标守卫 |

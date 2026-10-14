@@ -14,14 +14,35 @@
         "name": "ohos.permission.GET_NETWORK_INFO"
       },
       {
+        "name": "ohos.permission.ACCESS_CERT_MANAGER"
+      },
+      {
+        "name": "ohos.permission.RUNNING_LOCK"
+      },
+      {
+        "name": "ohos.permission.PRINT"
+      },
+      {
+        "name": "ohos.permission.PREPARE_APP_TERMINATE"
+      },
+      {
+        "name": "ohos.permission.ACCESS_BIOMETRIC"
+      },
+      {
         "name": "ohos.permission.FILE_ACCESS_PERSIST"
+      },
+      {
+        "name": "ohos.permission.PRIVACY_WINDOW"
+      },
+      {
+        "name": "ohos.permission.WINDOW_TOPMOST"
       },
       {
         "name": "ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY"
       },
       {
-        "name": "ohos.permission.READ_PASTEBOARD",
-        "reason": "$string:access_pasteboard",
+        "name": "ohos.permission.INHERIT_PARENT_PERMISSION",
+        "reason": "$string:inherit_parent_permission",
         "usedScene": {
           "abilities": [
             "EntryAbility"
@@ -30,8 +51,40 @@
         }
       },
       {
-        "name": "ohos.permission.READ_WRITE_DESKTOP_DIRECTORY",
-        "reason": "$string:desktop_dir",
+        "name": "ohos.permission.kernel.IGNORE_LIBRARY_VALIDATION",
+        "reason": "$string:ignore_library_validation",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ],
+          "when": "inuse"
+        }
+      },
+      {
+        "name": "ohos.permission.kernel.EXEMPT_ANONYMOUS_EXECUTABLE_MEMORY",
+        "reason": "$string:exempt_anonymous_executable_memory",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ],
+          "when": "inuse"
+        }
+      },
+      {
+        "name": "ohos.permission.GYROSCOPE"
+      },
+      {
+        "name": "ohos.permission.ACCELEROMETER"
+      },
+      {
+        "name": "ohos.permission.GET_FILE_ICON"
+      },
+      {
+        "name": "ohos.permission.LOCK_WINDOW_CURSOR"
+      },
+      {
+        "name": "ohos.permission.READ_PASTEBOARD",
+        "reason": "$string:access_pasteboard",
         "usedScene": {
           "abilities": [
             "EntryAbility"
@@ -58,9 +111,32 @@
           ],
           "when": "inuse"
         }
+      },
+      {
+        "name": "ohos.permission.READ_WRITE_DESKTOP_DIRECTORY",
+        "reason": "$string:desktop_dir",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ],
+          "when": "inuse"
+        }
+      },
+      {
+        "name": "ohos.permission.CUSTOM_SCREEN_CAPTURE",
+        "reason": "$string:screen_capture",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ],
+          "when": "inuse"
+        }
       }
     ],
     "definePermissions": [
+      {
+        "name": "ohos.permission.LOCK_WINDOW_CURSOR"
+      },
       {
         "name": "ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY"
       }
