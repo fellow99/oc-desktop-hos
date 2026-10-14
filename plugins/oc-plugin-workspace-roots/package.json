@@ -1,0 +1,8 @@
+{
+  "name": "oc-plugin-workspace-roots",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "description": "选择工作区目录：四个主目录（沙箱/桌面/文档/下载）的路径解析、主目录内建目录与目录权限桥，经插件 RPC 暴露给对话框"
+}

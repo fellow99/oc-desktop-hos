@@ -1,4 +1,4 @@
-# patches/v2.0.26 —— opencode v2.0.26 上游补丁（6 条）
+# patches/v2.0.26 —— opencode v2.0.26 上游补丁（7 条）
 
 本目录是**上游补丁**（不是本工程的构建脚本）。补丁只做「新增文件 + 开关式少量改动」，由
 `scripts/build-opencode.mjs` 阶段 ① 幂等应用到 `../opencode`，再由阶段 ③ 构建产物。
@@ -26,9 +26,13 @@
 | `0004-tui-zed-sqlite-ohos.patch` | `packages/tui/package.json`（`#zed-sqlite` 增 1 行）+ 新文件 `packages/tui/src/editor-zed-sqlite.ohos.ts`（54 行） | **必需**：`#zed-sqlite` 原先只有 `bun` / `node` / `default` 三个条件，在 `conditions: ["ohos", "node"]`（0001）下落到 `node` 变体，而该变体**静态** `import "node:sqlite"` ⇒ 模块加载期即抛 `No such binding: sqlite`，整个 CLI 产物无法启动（服务端宿主无输出、应用白屏）。ohos 变体改用 better-sqlite3（与 0002 同一策略与同一 `.node`），接口只暴露 `all` / `get`。 |
 | `0005-string-width-ohos.patch` | `packages/tui/package.json`（`#string-width` 增 1 行）+ 新文件 `packages/tui/src/util/string-width.ohos.ts`（28 行） | **当时判定为必需（2026-10-13）；2026-10-14 复盘：根因误判，已登记为可回收**。`#string-width` 原先只有 `bun` / `node` / `default`，在 `conditions: ["ohos", "node"]` 下落到 `node` 变体，而该变体在**模块顶层**构造 `new RegExp("^\p{Emoji}\p{Mark}*$", "u")` 与 `new RegExp("^\p{Emoji_Presentation}", "u")`；当时设备上运行期抛 `Invalid regular expression: ... Invalid property name` ⇒ 服务端 import 即失败、应用白屏（现场见 `logs/20261013-1/INCIDENT` 与 `ocr-trace.log` 的 `[启动服务端宿主] FAIL`）。**该现象的真实根因不是设备 ICU 能力缺失，而是 `web_engine/src/main/resources/resfile/icudtl.dat` 被 CRLF 归一化损坏了 51 字节**（详见 `docs/鸿蒙环境能力清单-v2.0.26.md` §10.2 / §10.4）；`icudtl.dat` 修复后真机实测 `\p{Emoji}` / `\p{Emoji_Presentation}` / `\p{Emoji_Component}` / `\p{Extended_Pictographic}` 全部可用，本补丁**因此不再必要**。回收需重跑 `build-opencode` 并复核品牌化断言，登记为后续项；当前保留不影响运行（差异只影响 TUI 文本对齐，本工程设备上无终端，`#pty` 已由 0003 打桩）。 |
 | `0006-shell-select-ohos.patch` | `packages/core/src/shell/select.ts`（2 处改，`git apply --numstat` = **+13 / −1**） | **必需（2026-10-14 真机定位）**：① `stat()`（`statSync(file, { throwIfNoEntry: false })`）在 OpenHarmony 应用域内对**系统路径**（如 `/bin/sh`、`/system/bin/sh`）抛 `EACCES: permission denied` 而**不是** `ENOENT`，`throwIfNoEntry` 只兜 `ENOENT` ⇒ 异常冒泡到 `select → executable → environment`；② `fallback()` 增认 `OC_SHELL_FALLBACK`。故障现象极具迷惑性：opencode 在**每次模型请求前**都会解析 shell（`SessionModelRequest.prepare → environment()`），因此会话建得出、用户消息能进库、SSE 也连得上，**但助手永远不回复**，服务端日志只有 `ERROR "Failed to drain Session" cause="EACCES: permission denied, stat '/bin/sh'"`，UI 侧表现为消息列表里冒出 `{type:"idle",outcome:"failed"}`。修法把「不可读」与「不存在」一视同仁（都当作「该 shell 不可用」，交给 `fallback()`），并让壳侧通过 `OC_SHELL_FALLBACK=/system/bin/sh`（`src-main/main.js` 的 `configureEnvironment`，可用 `OCR_SHELL` 覆盖）注入设备上真正可执行的 shell。 |
+| `0007-workspace-roots-picker.patch` | 新文件 `packages/app/src/workspaces/selection/roots.ts`（270 行）、`roots.test.ts`（210 行）；改 `packages/app/src/workspaces/selection/dialog.tsx`（**+190**）、`packages/app/src/runtime/i18n/en.ts`（**+18**）、`zh.ts`（**+18**） | **需求 203（`specs/203-plugin-workspace-picker`）**：把「选择工作区目录」对话框升级为**四个主目录**（沙箱 / 桌面 / 文档 / 下载）。① `roots.ts` 承载纯函数（根围栏 `isWithin`、根识别 `rootOf`、裁剪 `clampToRoot`、默认名去重 `defaultFolderName`、面包屑 `crumbSegments`、隐藏项过滤 `filterHiddenEntries`、主目录记忆读写）与壳侧能力 RPC 的调用封装；② `dialog.tsx` 在**能力 RPC 可用时**渲染四主目录 Tab、把浏览域锁在主目录内（`navigate` / `load` / `resolve` 三处独立判定）、移除手动路径输入、新增「新建文件夹」内联表单，并在主目录不可用或列举被拒时就地给出原因与「请求授权 / 去系统设置 / 重试」；③ **自门控**：RPC 不可达（非本壳部署 / 插件未激活）时 `roots.latest` 恒为 `undefined` ⇒ 全部 203 分支关闭，对话框**回退上游行为**，不出现半残状态。能力侧**不在本补丁内**，由壳专用插件 `plugins/oc-plugin-workspace-roots` 经 `POST /api/rpc/:rpcID/:method`（上游既有端点，**零 codegen**）提供；目录数据仍走既有 `fs/list`。 |
 
-以下为**尚未立项**的候选（按 §6.2 追加到列表末尾即可，编号单调递增）：`0007-search-ohos`（`#fff` 纯 JS 走查）、
-`0008-plugin-gate`（插件闸门）、`0009-branding`（若品牌化改为上游补丁而非产物级替换）。本目录当前为 6 条。
+以下为**尚未立项**的候选（按 §6.2 追加到列表末尾即可，编号单调递增）：`0008-search-ohos`（`#fff` 纯 JS 走查）、
+`0009-plugin-gate`（插件闸门）、`0010-branding`（若品牌化改为产物级替换而非上游补丁）。本目录当前为 7 条。
+
+> 编号顺延说明：原计划的候选 `0007-search-ohos` 起，编号让位给已立项的需求 203 补丁（本行下述 `0007`），
+> 后续候选一律从 `0008` 起，不回填、不复用（`docs/工程规划-V2.md` §6.2 编号单调递增）。
 
 ## 生成命令（可复现）
 
@@ -66,7 +70,8 @@ git apply <补丁> && git apply --reverse --check <补丁> && git apply --revers
 git status --porcelain                   # 必须为空（含 -uall）
 ```
 
-本目录 6 条补丁在 9b4ec5714d 上的实际校验结果（**2026-10-14 复核并重跑**，即加入 `0006` 后）：
+本目录补丁在 9b4ec5714d 上的实际校验结果。下面前五行是 **6 条版本（加入 `0006` 后，2026-10-14）** 的复核结果；
+`0007`（需求 203）的校验单列于表末四行，**未重跑全量按序应用**（该口径仍以 6 条版本的记录为准）：
 
 | 校验项 | 方法 | 结果 |
 |---|---|---|
@@ -75,6 +80,10 @@ git status --porcelain                   # 必须为空（含 -uall）
 | 干净基线按序应用 | `git worktree add --detach 9b4ec5714d` 后按 `0001→0002→…→0006` 依次 `git apply` | **6/6 干净应用**，无 fuzz、无 `--3way`；工作区 `git status --porcelain -uall` 恰为 **9 个落点文件**（4 个已跟踪文件被改 + 5 个新增文件） |
 | 应用结果一致性 | 干净基线应用后的 9 个落点文件 vs 主工作树（`build-opencode` 跑完、`0006` 也应用之后）对应文件 | **8/9 逐字节一致**；`packages/tui/src/editor-zed-sqlite.ohos.ts` 因 `core.autocrlf=true` 的 CRLF/LF 落地差异在 `cmp` 下报差异，**删掉 `\r` 后逐字节一致**（见下方「其它约定」的行尾条）—— 即 **9/9 在行尾归一化后一致**（2026-10-14 实测口径） |
 | 往返 | 逐条 `git apply` → `git apply --reverse --check` | **6/6 通过**（干净基线上逐条应用后反向判据全部成功，见上「干净基线按序应用」） |
+| `0007` 正向判据 | 干净基线 `git worktree add --detach 9b4ec5714d` 内 `git apply --check` + `git apply` | **干净落地**，无 fuzz、无 `--3way`、无拒绝 hunk |
+| `0007` 幂等判据 | 主工作树（`0007` 已应用）`git -C ../opencode apply --reverse --check` | **成功** ⇒ `build-opencode.mjs` 阶段 ① 判为已应用并跳过 |
+| `0007` 应用结果一致性 | 干净基线应用后的 5 个落点文件 vs 主工作树对应文件 | **3/5 逐字节一致**（`dialog.tsx`、`runtime/i18n/en.ts`、`runtime/i18n/zh.ts`）；两个**新增**文件 `workspaces/selection/roots.ts` / `roots.test.ts` 在 `cmp` 下报差异 —— 原因是 `core.autocrlf=true`：worktree 检出为 CRLF、主工作树内为 LF，**行尾归一化后一致**（同 `0005` 的既有口径） |
+| `0007` host 侧语义 | 主工作树内 `bun test --conditions=solid --preload ./happydom.ts src/workspaces/selection` | **63 pass / 0 fail**（3 个测试文件：新增 `roots.test.ts` 22 项 + 既有 `domain.test.ts` / `picker.test.ts` 回归） |
 
 历史记录（3 条版本，2026-10-11）：逐条 `--check` 通过、往返后工作区为空、blob 哈希一致、
 对真实上游主工作树做只读 `git apply --check` 亦全部通过。

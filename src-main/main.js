@@ -181,7 +181,43 @@ let sessionToken = null;
 let hostHandle = null;
 let mainWindow = null;
 
+// 203：真实家目录快照 —— 必须在任何 HOME 改写**之前**取，且只取一次。
+// configureEnvironment() 会把 HOME/USERPROFILE 指向沙箱 userData，且会被调用两次
+// （第二次调用时 HOME 已是沙箱），因此这里在模块加载期取一次并缓存。
+const REAL_HOME = process.env.HOME || process.env.USERPROFILE || os.homedir() || '';
+// 203：三个用户主目录的固定目录名（id → 目录名），顺序即 OCR_USER_ROOTS 的语义顺序
+const USER_ROOT_DIR_NAMES = [['desktop', 'Desktop'], ['documents', 'Documents'], ['download', 'Download']];
+
 // ------------------------------------------------------------------ 阶段 1：环境装配
+
+// 203：解析「桌面 / 文档 / 下载」三个用户主目录的绝对真实路径，落 OCR_USER_ROOTS。
+//
+// 为什么必须在这里做：本函数只在 HOME 被改写**之前**调用才有意义（configureEnvironment() 把
+// HOME/USERPROFILE 指向沙箱），而渲染层（ArkWeb/Chromium 同源加载的网页）既看不到真实家目录，
+// 也没有 Node，无法触达 ArkTS；ArkTS 侧 ContextPathAdapter.getUser{Desktop,Document,Download}Dir
+// 目前是空实现且未绑定到 JS。因此由宿主解析、经环境变量交给服务端进程内的插件
+// oc-plugin-workspace-roots（同进程），再由插件经 RPC 提供给对话框。
+//
+// 逐项校验「存在且是目录」：不满足者落 null（插件据此把该主目录标为不可用并给出原因），
+// **不静默换根**（FR-203-005）。结果同时落 trace，供真机取证（FR-203-006）。
+function resolveUserRoots() {
+  const resolved = {};
+  for (const [id, name] of USER_ROOT_DIR_NAMES) {
+    const candidate = REAL_HOME ? path.join(REAL_HOME, name) : '';
+    let available = false;
+    if (candidate) {
+      try {
+        available = fs.statSync(candidate).isDirectory();
+      } catch {
+        available = false;
+      }
+    }
+    resolved[id] = available ? candidate : null;
+    log(`[${currentStage}] user-root ${id}=${available ? candidate : '<unavailable>'} (realHome=${REAL_HOME || '<unset>'})`);
+  }
+  process.env.OCR_USER_ROOTS = JSON.stringify({ home: REAL_HOME, ...resolved });
+  return { home: REAL_HOME, ...resolved };
+}
 
 /**
  * 沙箱映射（工程规划 §5.3）：真机上 homedir 不可写、/tmp 与 os.tmpdir() 不可写、TMPDIR 无效，
@@ -192,6 +228,10 @@ function configureEnvironment() {
   for (const dir of [TMP_DIR, DATA_DIR, CACHE_DIR, CONFIG_DIR, STATE_DIR, RUNTIME_DIR]) {
     fs.mkdirSync(dir, { recursive: true });
   }
+
+  // 203（specs/203-plugin-workspace-picker FR-203-004）：三个用户主目录的真实绝对路径必须在
+  // 改写 HOME **之前**解析并固化到环境变量；下一行起 HOME 指向沙箱，真实家目录不可恢复。
+  resolveUserRoots();
 
   process.env.HOME = APP_HOME;
   process.env.USERPROFILE = APP_HOME;

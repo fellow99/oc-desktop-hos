@@ -175,7 +175,8 @@ function discoverPlugins() {
  */
 async function assertToolMetadata(plugins) {
   banner(3, "导入式工具元数据检查");
-  const expected = { "oc-plugin-harmony-shell": ["shell"], "oc-plugin-harmony-search": ["grep", "glob"] }
+  // 非工具型插件（如 oc-plugin-workspace-roots：只注册 RPC，不注册工具）期望注册 0 个工具。
+  const expected = { "oc-plugin-harmony-shell": ["shell"], "oc-plugin-harmony-search": ["grep", "glob"], "oc-plugin-workspace-roots": [] }
   let total = 0
   for (const plugin of plugins) {
     const moduleUrl = pathToFileURL(join(plugin.directory, "index.js")).href
@@ -196,7 +197,7 @@ async function assertToolMetadata(plugins) {
       update: () => {},
       remove: (name) => removed.push(name),
     }
-    const context = { tool: { transform: async (callback) => callback(editor) } }
+    const context = { tool: { transform: async (callback) => callback(editor) }, rpc: { register: async () => ({ dispose: () => {} }) } }
     await definition.setup(context)
     const names = added.map((tool) => tool.name).sort()
     const want = (expected[plugin.name] ?? []).slice().sort()
