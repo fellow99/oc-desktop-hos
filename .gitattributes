@@ -1,0 +1,36 @@
+# ============================================================================
+# .gitattributes —— 换行转换纪律
+# ----------------------------------------------------------------------------
+# 背景（真机事故 2026-10-14）：运行时 resfile 下的资源是**二进制**，其中内嵌的
+# PNG / 文本资源带 0x0D 字节。一旦被当作文本做 CRLF→LF 归一化，文件会被静默「瘦身」：
+#   icudtl.dat  −51 B
+#   resources.pak −120 B
+#   chrome_100_percent.pak −197 B
+#   chrome_200_percent.pak −201 B
+# （逐字节核验：被删掉的全部是 CRLF 对。）
+# 后果有两层，且都发生在真机、只表现为「白屏/闪退」：
+#   1. ICU 数据损坏 → `RangeError: Internal error. Icu error.`（服务端产物 import 即失败）；
+#   2. Chromium 数据包损坏 → `Data pack file corruption: Entry #N past end`
+#      → 加载 resources.pak 失败 → 建窗时 CHECK 失败 → `Signal:SIGTRAP(TRAP_BRKPT)` 崩溃。
+# 因此把二进制类型显式标记为 `-text`，永久关闭换行转换。
+# 注意：本仓库在 Windows 上开发，系统级 `core.autocrlf=true`，不能依赖 Git 的
+# 二进制自动探测（历史上正是它没兜住这批文件）。
+# ============================================================================
+
+# 运行时 / 引擎二进制资源（必须与发行版运行时逐字节一致）
+*.pak   -text
+*.dat   -text
+*.bin   -text
+*.so    -text
+*.node  -text
+*.a     -text
+
+# 图片与打包产物
+*.png   -text
+*.jpg   -text
+*.jpeg  -text
+*.ico   -text
+*.hap   -text
+*.asar  -text
+*.zip   -text
+*.gz    -text

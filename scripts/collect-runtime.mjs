@@ -652,6 +652,30 @@ function stage10Guards(manifest) {
     if (size !== 32) guard(header.width === size, `图标边长 ${size} ${relPath}（实际 ${header.width}）`);
   }
 
+  // 10.13 resfile 二进制必须与运行时发行版**逐字节一致**
+  // （真机事故 2026-10-14：`icudtl.dat` / `resources.pak` / `chrome_*.pak` 被当成文本做了
+  //   CRLF→LF 归一化，各少了 51 / 120 / 197 / 201 字节 —— 逐字节核验被删掉的全是 CRLF 对。
+  //   后果分两层且都只表现为真机白屏/闪退：ICU 数据损坏
+  //   （`RangeError: Internal error. Icu error.`，服务端产物 import 即失败）与 Chromium 数据包
+  //   损坏（`Data pack file corruption: Entry #N past end` → 加载 resources.pak 失败 →
+  //   建窗时 CHECK 失败 → `Signal:SIGTRAP(TRAP_BRKPT)` 崩溃）。
+  //   本守卫是这条约束的唯一自动兜底：`.gitattributes` 只防未来复发，防不住已有损坏。）
+  {
+    const resfileRel = 'web_engine/src/main/resources/resfile';
+    const resfileSrcDir = join(stage1LocateRuntime(), resfileRel);
+    if (!isDir(resfileSrcDir)) {
+      guard(false, `运行时 resfile 目录存在 ${resfileRel}`);
+    } else {
+      for (const file of findFiles(resfileSrcDir, () => true)) {
+        const relPath = rel(resfileSrcDir, file);
+        // resources/app 由本工程自行投放（阶段 4/8），不属运行时资产，另行守卫
+        if (relPath.startsWith('resources/')) continue;
+        const dest = join(PROJECT_ROOT, resfileRel, relPath);
+        guard(isFile(dest) && md5File(dest) === md5File(file), `resfile 二进制与运行时一致 ${relPath}`);
+      }
+    }
+  }
+
   if (failed > 0) fail(`一致性守卫 ${failed} 项未通过，已中止（旧壳 / 错 SO / 定制丢失 / 权限越界 / 合规风险）。`);
   log(10, '全部守卫通过');
 }
