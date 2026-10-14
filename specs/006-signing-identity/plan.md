@@ -12,7 +12,7 @@
   - `AppScope/app.json5`：`bundleName`、`label`、`versionCode`、`versionName`、图标引用；
   - `electron/src/main/resources/{base,en_US,zh_CN}/element/string.json`：`EntryAbility_label`；
   - `electron/src/main/module.json5`：开放权限（`requestPermissions`）；
-  - `web_engine/src/main/module.json5`：受限权限 `definePermissions`（含 JIT 权限）；
+  - `web_engine/src/main/module.json5`：权限声明面（`requestPermissions` + `definePermissions`，含 JIT 与 3 项 ACL）；`runtime-overlays/web_engine/src/main/module.json5` 为回盖源（同 md5）；
   - `hvigorfile.ts`：签名材料注入（`afterNodeEvaluate`）。
 - 运行时侧（harmonypc-electron）与身份相关的参考机制：`runtime-manifest.json` 的 `bundleNameRewrite.adapters`（4 个 ArkTS 适配文件各 1 处命中）——🔶 用于校验 `web_engine` 内是否残留旧 bundle 硬编码。
 
@@ -37,9 +37,10 @@
 | 改名机制 | 三处同步 + 校验脚本（不靠记忆） | 🔶 同型工程踩坑 |
 | 签名材料注入 | `hvigorfile.ts#afterNodeEvaluate`，仅内存注入不写回 | 工程规划 §3.7 |
 | 共享签名 | 不使用，必须自有证书 | bundleName 不同 |
-| ACL 归属 | 按本包名单独申请 JIT 受限权限 | 工程规划 §3.7、§8.1 |
-| 权限声明纪律 | 只声明实际使用项；`READ_WRITE_DESKTOP_DIRECTORY` 不申请 | §8.3（上架障碍） |
+| ACL 归属 | 按本包名单独申请 3 项受限权限（JIT / `READ_PASTEBOARD` / `READ_WRITE_DESKTOP_DIRECTORY`） | 工程规划 §3.7、§8.1；上游 `ACL申请清单-v1.md` |
+| 权限声明纪律 | 只声明实际使用项；本批 ACL 共 3 项（JIT + `READ_PASTEBOARD` + `READ_WRITE_DESKTOP_DIRECTORY`），其余受限项一律不申请 | FR-006-011 / 013 / 025；§8.3 |
 | JIT 权限 | `ALLOW_WRITABLE_CODE_MEMORY` 同时进 `requestPermissions` 与 `definePermissions` | 引擎必需，不可删 |
+| ACL 清单对齐 | 按上游 `dsh-desktop-hos/docs/ACL申请清单-v1.md` §1 的 6 项逐项核对本工程声明面，差异以「补齐声明」消除 | spec FR-006-025（2026-10-14） |
 | versionCode | 严格递增 + release 守卫（基线在 `docs/上架合规清单.md`） | §8.5 G7 |
 | versionName | 与上游基线可读关联，职责与 `versionCode` 分离 | 上架信息一致性 |
 | 图标守卫 | 解析 PNG IHDR 颜色类型判定 Alpha（4/6 带 Alpha） | §8.5 G2；无需图像库 |
@@ -101,7 +102,7 @@ identity-check（三处 label 一致 + 包名唯一）→ version-check（releas
 | `scripts/lib/version-guard.mjs` | `versionCode` 递增守卫（对比 `docs/上架合规清单.md` 基线） |
 | `scripts/lib/png-guard.mjs` | 图标 Alpha 守卫（PNG `IHDR` 解析） |
 | `AppScope/app.json5` | `bundleName` / `label` / `versionCode` / `versionName` 的单一来源 |
-| `web_engine/src/main/module.json5` | 受限权限 `definePermissions`（含 JIT 权限）与开放权限声明 |
+| `web_engine/src/main/module.json5` | 受限权限 `definePermissions`（含 JIT 权限）与开放权限声明（含 3 项 ACL：JIT / `READ_PASTEBOARD` / `READ_WRITE_DESKTOP_DIRECTORY`） |
 
 ### 4.2 本模块消费
 
@@ -163,7 +164,7 @@ hdc shell "hilog -x | grep oc-desktop"
 
 ### 6.3 验收口径
 
-- spec §5 七个场景全绿；「材料缺失 / 版本未递增 / 图标带 Alpha / release 档调试开关」四类守卫各被真实触发一次；`git status --porcelain` 在完成 debug 构建后无签名材料相关改动。
+- spec §5 七个场景全绿；「材料缺失 / 版本未递增 / 图标带 Alpha / release 档调试开关」四类守卫各被真实触发一次；`git status --porcelain` 在完成 debug 构建后无签名材料相关改动；`node scripts/collect-runtime.mjs --verify-only` 阶段 10.6/10.7 全绿（ACL 6 项在册 + JIT 两处 + overlay md5 一致）。
 
 ## 7. 文件清单
 
@@ -174,7 +175,7 @@ hdc shell "hilog -x | grep oc-desktop"
 | `electron/src/main/resources/en_US/element/string.json` | `EntryAbility_label`（英文） |
 | `electron/src/main/resources/zh_CN/element/string.json` | `EntryAbility_label`（中文） |
 | `electron/src/main/module.json5` | 开放权限声明（`requestPermissions`）与避免 `browsable`/`viewData` |
-| `web_engine/src/main/module.json5` | 受限权限 `definePermissions`（含 JIT 权限） |
+| `web_engine/src/main/module.json5` | 权限声明面（`requestPermissions` 8 项 + `definePermissions`，含 JIT 与 3 项 ACL）；`runtime-overlays/` 同文件为回盖源 |
 | `hvigorfile.ts` | 签名材料注入（`afterNodeEvaluate`，仅内存）+ release 守卫调用 |
 | `signing.debug.local.json.sample` / `signing.release.local.json.sample` | 材料模板（入库，无真实密钥） |
 | `scripts/lib/identity.mjs` / `version-guard.mjs` / `png-guard.mjs` | 身份、版本、图标守卫 |
@@ -188,6 +189,6 @@ hdc shell "hilog -x | grep oc-desktop"
 |----------|------|
 | FR-006-001 ~ 004（身份与命名） | `AppScope/app.json5`、三套 `string.json`、`scripts/lib/identity.mjs` |
 | FR-006-005 ~ 009（签名与 Profile） | `hvigorfile.ts`（`afterNodeEvaluate`）、`signing.*.local.json.sample` |
-| FR-006-010 ~ 016（ACL 归属） | `web_engine/src/main/module.json5`、`electron/src/main/module.json5`、`docs/ACL申请清单.md` |
+| FR-006-010 ~ 016、025、026（ACL 归属） | `web_engine/src/main/module.json5`、`runtime-overlays/web_engine/src/main/module.json5`、`scripts/collect-runtime.mjs`（阶段 10.6/10.7 断言）、`docs/ACL申请清单.md` |
 | FR-006-017 ~ 020（versionCode 与版本纪律） | `AppScope/app.json5`、`scripts/lib/version-guard.mjs`、`scripts/build-release.ps1`、`docs/上架合规清单.md` |
 | FR-006-021 ~ 024（身份类合规守卫） | `scripts/lib/png-guard.mjs`、`AppScope/resources/base/media/`、release 档开关守卫、`docs/上架合规清单.md` |

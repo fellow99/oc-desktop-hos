@@ -12,7 +12,7 @@
 | 用户目录属主/模式 | `Documents` / `Download` / `Desktop` = `mode 2771`、属主 `file_manager`；应用 uid 落 "other" → `R_OK`/`W_OK` `EACCES`、`writeFile`/`mkdir` `EPERM` | dsh 真机 ✅（本工程 ⬜ 复验） |
 | 授权生效条件 | 需在「设置 → 应用 → 本应用 → 允许访问」授予，并**重启应用** | dsh 真机 ✅（本工程 ⬜ 复验） |
 | 授权持久性 | Picker URI **仅临时授权**；**每次启动须 `activatePermission`**；卸载清空；`FILE_ACCESS_PERSIST` 为 `system_grant` / since API 11 | dsh 已核对官方文档与 SDK ✅（本工程 ⬜ 复验） |
-| 权限级别 | `READ_WRITE_DOCUMENTS_DIRECTORY` / `READ_WRITE_DOWNLOAD_DIRECTORY` = `normal` / `user_grant` / since 11；`READ_WRITE_DESKTOP_DIRECTORY` = `system_basic`（上架障碍） | dsh 已核对 SDK `PermissionDefinitions.json` ✅ |
+| 权限级别 | `READ_WRITE_DOCUMENTS_DIRECTORY` / `READ_WRITE_DOWNLOAD_DIRECTORY` = `normal` / `user_grant` / since 11；`READ_WRITE_DESKTOP_DIRECTORY` = `system_basic`（上架障碍；2026-10-14 起由 `006-signing-identity` 声明并随 ACL 批次申请，上架前复核） | dsh 已核对 SDK `PermissionDefinitions.json` ✅ |
 | ArkTS ↔ Node 桥 | `systemPreferences.callArkTSFunction` / `callArkTSAsyncFunction`：仅 `string`/`number`/`boolean`/`string[]`/`number[]`，**参数 ≤3 个**，两个入口都返回 Promise | dsh 真机 ✅（本工程 ⬜ 复验） |
 | 服务端项目语义 | 项目由**目录**决定：`ServerOptions.config.directory`；只读查询 `GET /api/location` / `GET /api/project` | `docs/工程规划-V2.md` §2.1、§5.6 |
 
@@ -82,7 +82,7 @@ applyProjectRoot(host, realPath) -> { applied, crossCheckedLocation }
 | `READ_WRITE_DOCUMENTS_DIRECTORY` | `normal` / `user_grant` | `requestPermissions` | 文档目录（首次系统弹窗） |
 | `READ_WRITE_DOWNLOAD_DIRECTORY` | `normal` / `user_grant` | `requestPermissions` | 下载目录（首次系统弹窗） |
 | `FILE_ACCESS_PERSIST` | `system_grant` / since 11 | `requestPermissions` | 持久授权通道（Picker 路线） |
-| `READ_WRITE_DESKTOP_DIRECTORY` | `system_basic` | **不声明** | 上架障碍；本工程不直写桌面 |
+| `READ_WRITE_DESKTOP_DIRECTORY` | `system_basic` | 由 `006-signing-identity` 声明（2026-10-14 起，随 ACL 批次申请） | 本模块不直接声明；上架障碍风险须在上架前复核（`docs/ACL申请清单.md` §7.3 ⬜-6） |
 
 ## 5. 实现策略
 
@@ -98,7 +98,7 @@ applyProjectRoot(host, realPath) -> { applied, crossCheckedLocation }
 | 层 | 手段 | 覆盖 |
 |---|---|---|
 | 单元（裸 Node / host 侧） | `node:test` | 默认根生成、选择记录读写（仅路径）、探针封装（对沙箱目录应为 `ok`）、`applyProjectRoot` 的差异判定、失败分支（`denied` / `unsupported` / 探针 `EACCES`） |
-| 静态断言 | `grep` 守卫 | 权限声明面不含 `READ_WRITE_DESKTOP_DIRECTORY`；代码中不出现把 URI 当项目根的分支；不出现 `symlink` / `hardlink` 依赖 |
+| 静态断言 | `grep` 守卫 | 权限声明面不含 `READ_WRITE_DESKTOP_DIRECTORY`（注：该权限自 2026-10-14 起由 `006-signing-identity` 声明，本模块 `grep` 断言范围不变）；代码中不出现把 URI 当项目根的分支；不出现 `symlink` / `hardlink` 依赖 |
 | host 侧门禁 | `scripts/smoke-node22.mjs` | 宿主启动时项目根注入不破坏服务端启动；`GET /api/location` 可达 |
 | 真机（Phase 1） | 应用域取证（`--inspect` / 日志 / UI） | ① 沙箱默认根探针通过 ② 未授权用户目录 → `EACCES`/`EPERM` + 指引可见 ③ 授权 + 重启后探针通过 ④ 第二次启动重放激活成功 ⑤ UI 内切换项目后 `GET /api/location` 一致 |
 | 先决探针 | Phase 0 **P0-1**（宿主形态） | 决定「项目根变化是否需要重建宿主」；若宿主不可重建，则切换项目限定为「服务端仍在同一项目根、仅会话根变化」⬜ |

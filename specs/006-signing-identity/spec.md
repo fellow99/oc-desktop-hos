@@ -10,7 +10,7 @@
 
 - 应用显示名 **OC Desktop**、bundleName **`org.fellow99.oc.OCDesktop`**，并保证改名时「三处同步」不漏；
 - 签名材料（`signing.debug.local.json` / `signing.release.local.json`）由 `hvigorfile.ts` 在 `afterNodeEvaluate` **仅内存注入**，不入库、不写回；
-- ACL 归属：本包名需单独申请受限权限，其中 `ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY` 是 Electron/V8 启用 JIT 的前提（决定 `007-runtime-host` 三候选的可行性边界）；
+- ACL 归属：本包名需单独申请 3 项受限权限（`kernel.ALLOW_WRITABLE_CODE_MEMORY` / `READ_PASTEBOARD` / `READ_WRITE_DESKTOP_DIRECTORY`，清单对齐 `dsh-desktop-hos/docs/ACL申请清单-v1.md`），其中 `ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY` 是 Electron/V8 启用 JIT 的前提（决定 `007-runtime-host` 三候选的可行性边界）；
 - `versionCode` 规则与上架身份类合规项（图标、禁用词、调试开关）的构建期守卫。
 
 ### 1.2 解决的问题（What pain points it addresses）
@@ -67,12 +67,15 @@
 ### 3.3 ACL 归属
 
 - FR-006-010 受限权限判定 MUST 使用权威规则「`provisionEnable == true` 且 `availableLevel ∈ {system_basic, system_core}`」；MUST NOT 仅凭名称含 `kernel.` 就主张申请。
-- FR-006-011 本包名 MUST 单独申请 `ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY`（system_basic / since 14 / 平板 + 2in1 / 受限），并在 `web_engine/src/main/module.json5` 中**同时**出现在 `requestPermissions` 与 `definePermissions`；该权限是 Electron/V8 启用 JIT 的前提，MUST NOT 删除。
-- FR-006-012 开放权限 MUST 只声明实际使用项（如 `INTERNET`、`GET_NETWORK_INFO`、`KEEP_BACKGROUND_RUNNING`），且与 `002-lifecycle` 的声明保持一致（不声明未使用能力）。
-- FR-006-013 系统 MUST NOT 申请：AGC 二进制证书（`certType: 4`）、`ALLOW_EXTERNAL_NATIVE_CODE`、`kernel.LOAD_INDEPENDENT_LIBRARY`、`READ_WRITE_DESKTOP_DIRECTORY`（`system_basic`，上架障碍）、四个 `*PLUGIN*` 权限，以及 `CUSTOM_SANDBOX` / `RUN_ANY_CODE` / `ACCESS_USER_FULL_DISK` / `SANDBOX_ACCESS_MANAGER` / `GET_DEVICE_INDEPENDENT_BINARY_CERT`。
+- FR-006-011 本包名 MUST 按上游 ACL 批次（`dsh-desktop-hos/docs/ACL申请清单-v1.md` §1）单独申请 3 项受限权限：`ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY`（system_basic / since 14）、`ohos.permission.READ_PASTEBOARD`（system_basic / since 11）、`ohos.permission.READ_WRITE_DESKTOP_DIRECTORY`（system_basic / since 11）；三项 MUST 在 `web_engine/src/main/module.json5` 的 `requestPermissions` 中声明，其中 `kernel.ALLOW_WRITABLE_CODE_MEMORY` MUST **同时**出现在 `definePermissions`（Electron/V8 启用 JIT 的前提，MUST NOT 删除）。
+- FR-006-012 开放权限 MUST 只声明实际使用项（如 `INTERNET`、`GET_NETWORK_INFO`、`FILE_ACCESS_PERSIST`、`READ_WRITE_DOCUMENTS_DIRECTORY`、`READ_WRITE_DOWNLOAD_DIRECTORY`；`KEEP_BACKGROUND_RUNNING` 属 `002-lifecycle` 的待落地声明），不声明未使用能力；`user_grant` 项（`READ_PASTEBOARD`、`READ_WRITE_DESKTOP_DIRECTORY`、`READ_WRITE_DOCUMENTS_DIRECTORY`、`READ_WRITE_DOWNLOAD_DIRECTORY`）MUST 带 `reason` + `usedScene`（`EntryAbility` / `when: inuse`）。
+- FR-006-013 系统 MUST NOT 申请：AGC 二进制证书（`certType: 4`）、`ALLOW_EXTERNAL_NATIVE_CODE`、`kernel.LOAD_INDEPENDENT_LIBRARY`、四个 `*PLUGIN*` 权限，以及 `CUSTOM_SANDBOX` / `RUN_ANY_CODE` / `ACCESS_USER_FULL_DISK` / `SANDBOX_ACCESS_MANAGER` / `GET_DEVICE_INDEPENDENT_BINARY_CERT`。（注：`READ_WRITE_DESKTOP_DIRECTORY` 自 2026-10-14 起依 FR-006-025 改为**声明并申请**，不再属本禁止清单；上架前复核见 `docs/ACL申请清单.md` §7.3 ⬜-6。）
 - FR-006-014 ACL 提交纪律 MUST 被记录并遵守：单次最多 30 个权限、上一批未审完不得提交新批、ACL 变化后必须重建 Profile、试用调试 Profile 5 天有效期且每应用最多 5 个。
 - FR-006-015 ⬜ 待验证：全新安装时 JIT 受限权限可能被设备策略拒绝 → 规避手段（日常使用 `hdc app install -r` 覆盖安装）MUST 经真机验证并记录到 `docs/ACL申请清单.md`。
 - FR-006-016 权限申请材料（申请原因 ≤ 256 字、使用场景）MUST 在 `docs/ACL申请清单.md` 中维护为可提交文本。
+
+- FR-006-025 本工程的权限声明面 MUST 与上游 ACL 清单文档（`dsh-desktop-hos/docs/ACL申请清单-v1.md` §1 的 6 项权限）逐项一致；差异 MUST 以「补齐本工程声明」的方式消除，并同步：① `docs/ACL申请清单.md`（申请口径 + 声明现状 + 变更记录）；② `scripts/collect-runtime.mjs` 阶段 10.6 的权限集断言（`FORBIDDEN_PERMISSIONS` / `REQUIRED_PERMISSIONS` / `JIT_PERMISSION` 两处计数）；③ `runtime-overlays/web_engine/src/main/module.json5` 回盖源（与目标同 md5，阶段 10.7 守卫）。
+- FR-006-026 `user_grant` 权限的 `usedScene.abilities` MUST 指向本工程真实存在的 Ability（当前为 `EntryAbility`），MUST NOT 引用不存在的 Ability 名；`when` 取值 MUST 与用途一致（本工程统一 `inuse`）。
 
 ### 3.4 versionCode 与版本纪律
 
@@ -156,7 +159,7 @@
 - 假设 🔶：改名必须同步三处（`AppScope/app.json5` + 三套 `string.json` + `web_engine` 内适配点），否则系统界面显示旧名。
 - 假设 🔶：受限权限判定规则为「`provisionEnable == true` 且 `availableLevel ∈ {system_basic, system_core}`」。
 - 假设 🔶：应用市场审核对渲染组件（ArkWeb）、图标纯色、首启文案、AI 标识、命名禁用词有硬性要求（工程规划 §8.5 G1–G10）。
-- 约束：MUST NOT 使用共享签名；MUST NOT 申请 `READ_WRITE_DESKTOP_DIRECTORY` 等上架障碍权限；MUST NOT 以 `CUSTOM_SANDBOX` 替代进程沙箱。
+- 约束：MUST NOT 使用共享签名；MUST NOT 以 `CUSTOM_SANDBOX` 替代进程沙箱；本批次 ACL 只申请 `kernel.ALLOW_WRITABLE_CODE_MEMORY` / `READ_PASTEBOARD` / `READ_WRITE_DESKTOP_DIRECTORY` 三项（其余受限项一律不申请，见 FR-006-013）；`READ_WRITE_DESKTOP_DIRECTORY` 的上架风险 MUST 在上架前复核（`docs/ACL申请清单.md` §7.3 ⬜-6）。
 - 约束：`better_sqlite3.node` 属**随包原生库**（放在 `libs/arm64-v8a/`），与「执行自有 ELF」不同，MUST NOT 因此申请二进制证书。
 - ⬜ 待验证：`org.fellow99.oc.OCDesktop` 是否与已注册的应用主体一致（影响签名、ACL 归属与备案三一致；工程规划 §12.1）。
 - ⬜ 待验证：ACL 审批的前置条件与节奏（是否要求应用已创建/已提交，试用调试 Profile 的实际可用性）。

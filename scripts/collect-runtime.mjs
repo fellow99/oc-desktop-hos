@@ -162,9 +162,13 @@ const APP_KEEP = new Set([
   'plugins',
 ]);
 
-/** 权限断言：必须**不得**出现的受限/上架障碍权限（工程规划 §8.3） */
+/**
+ * 权限断言：必须**不得**出现的受限/上架障碍权限（工程规划 §8.3）。
+ * 例外：`READ_WRITE_DESKTOP_DIRECTORY` 自 006-signing-identity 对齐
+ * `dsh-desktop-hos/docs/ACL申请清单-v1.md` 后**改为声明并随批次申请**（见 REQUIRED_PERMISSIONS），
+ * 因此从本表移除；上架前仍须按 `docs/ACL申请清单.md` §5 复核是否保留。
+ */
 const FORBIDDEN_PERMISSIONS = [
-  'ohos.permission.READ_WRITE_DESKTOP_DIRECTORY',
   'ohos.permission.PRINT',
   'ohos.permission.CUSTOM_SANDBOX',
   'ohos.permission.RUN_ANY_CODE',
@@ -172,8 +176,20 @@ const FORBIDDEN_PERMISSIONS = [
   'ohos.permission.ALLOW_EXTERNAL_NATIVE_CODE',
 ];
 
-/** 权限断言：必须**存在**的权限 */
-const REQUIRED_PERMISSIONS = ['ohos.permission.INTERNET'];
+/**
+ * 权限断言：必须**存在**的权限（对齐 `docs/ACL申请清单.md` §1 的 6 项：
+ * 3 项需 ACL + 3 项开放权限，另有本工程自用的 INTERNET / GET_NETWORK_INFO）。
+ */
+const REQUIRED_PERMISSIONS = [
+  'ohos.permission.INTERNET',
+  'ohos.permission.GET_NETWORK_INFO',
+  'ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY',
+  'ohos.permission.READ_PASTEBOARD',
+  'ohos.permission.READ_WRITE_DESKTOP_DIRECTORY',
+  'ohos.permission.READ_WRITE_DOCUMENTS_DIRECTORY',
+  'ohos.permission.READ_WRITE_DOWNLOAD_DIRECTORY',
+  'ohos.permission.FILE_ACCESS_PERSIST',
+];
 
 /** JIT 权限（V8 必需，须同时出现在 requestPermissions 与 definePermissions） */
 const JIT_PERMISSION = 'ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY';
@@ -608,7 +624,7 @@ function stage10Guards(manifest) {
     guard(isFile(p) && readText(p).includes(EXPECTED_APP_LABEL), `EntryAbility_label(${locale}) = ${EXPECTED_APP_LABEL}`);
   }
 
-  // 10.6 权限集断言（受限权限最小化，工程规划 §8）
+  // 10.6 权限集断言（对齐 docs/ACL申请清单.md 的 6 项 + 本工程自用开放权限）
   const webEngineManifest = join(PROJECT_ROOT, 'web_engine', 'src', 'main', 'module.json5');
   if (isFile(webEngineManifest)) {
     const text = readText(webEngineManifest);
@@ -616,7 +632,7 @@ function stage10Guards(manifest) {
       guard(!text.includes(permission), `未声明受限权限 ${permission}`);
     }
     for (const permission of REQUIRED_PERMISSIONS) {
-      guard(text.includes(permission), `已声明开放权限 ${permission}`);
+      guard(text.includes(permission), `已声明权限 ${permission}`);
     }
     const jitHits = text.split(JIT_PERMISSION).length - 1;
     guard(jitHits === 2, `JIT 权限出现在 requestPermissions + definePermissions 两处（实际 ${jitHits} 处）`);

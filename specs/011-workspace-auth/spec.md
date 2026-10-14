@@ -37,7 +37,7 @@
 - 可写性验证：把目录交给服务端前的写入探针与回读校验。
 - 项目根传递：宿主 → 服务端（`config.directory` / 启动参数），并与 `GET /api/location` 的观测结果交叉校验。
 - UI 内切换项目时的授权复用通道。
-- 权限声明面：`READ_WRITE_DOCUMENTS_DIRECTORY` / `READ_WRITE_DOWNLOAD_DIRECTORY` / `FILE_ACCESS_PERSIST`；明确**不**申请 `READ_WRITE_DESKTOP_DIRECTORY`。
+- 权限声明面：`READ_WRITE_DOCUMENTS_DIRECTORY` / `READ_WRITE_DOWNLOAD_DIRECTORY` / `FILE_ACCESS_PERSIST`；`READ_WRITE_DESKTOP_DIRECTORY` 自 2026-10-14 起**改由 `006-signing-identity` 声明并随 ACL 批次申请**（本模块不自行声明；见该模块 FR-006-011 / FR-006-025，上架前复核与回退点见 `docs/ACL申请清单.md` §7.3 ⬜-6 / §11）。
 
 **不包含**：
 
@@ -78,7 +78,7 @@
 | FR-011-008 | 在把目录作为项目根交给服务端之前，宿主 MUST 做**写入探针 + 回读校验**（建临时文件 → 回读内容 → 删除）；探针失败 MUST 视为该目录不可用 | MUST | `chmod` 静默语义与「写入后回读」纪律：✅ dsh 真机（`hmdfs` 不落实 mode）；⬜ 本工程复验 |
 | FR-011-009 | 目录不可用（未授权 / `EACCES` / `EPERM` / 探针失败）时 MUST 呈现可执行指引（授权路径 + 可能需要重启应用），MUST NOT 只抛错误码 | MUST | ✅ dsh 真机（三目录需在「设置 → 应用 → 本应用 → 允许访问」授权并重启应用）；⬜ 本工程复验 |
 | FR-011-010 | 未授权时的回退行为 MUST 显式：回退到沙箱内默认项目根并在 UI 明示「当前用的是沙箱目录」，MUST NOT 静默回退 | MUST | 设计决策 |
-| FR-011-011 | 权限声明面 MUST 限于 `READ_WRITE_DOCUMENTS_DIRECTORY`、`READ_WRITE_DOWNLOAD_DIRECTORY`（`normal` / `user_grant`，since API 11）与 `FILE_ACCESS_PERSIST`（`system_grant`，since API 11）；MUST NOT 声明 `READ_WRITE_DESKTOP_DIRECTORY`（`system_basic`，上架障碍） | MUST | 🔶 dsh 已核对 SDK `PermissionDefinitions.json`；`docs/工程规划-V2.md` §8.2/§8.3；本工程 ⬜ 复核 |
+| FR-011-011 | 权限声明面 MUST 限于 `READ_WRITE_DOCUMENTS_DIRECTORY`、`READ_WRITE_DOWNLOAD_DIRECTORY`（`normal` / `user_grant`，since API 11）与 `FILE_ACCESS_PERSIST`（`system_grant`，since API 11）；**例外（2026-10-14 口径变更）**：`READ_WRITE_DESKTOP_DIRECTORY`（`system_basic`）改由 `006-signing-identity` 依上游 `ACL申请清单-v1.md` 声明并随 ACL 批次申请，本模块 MUST NOT 自行声明亦 MUST NOT 依赖其已获批 | MUST | 🔶 dsh 已核对 SDK `PermissionDefinitions.json`；`docs/工程规划-V2.md` §8.2/§8.3；口径变更记录见 `docs/ACL申请清单.md` §11 |
 | FR-011-012 | 对任意用户目录的**持久**访问 MUST 只走「系统 Picker + 持久授权」路线，不得自建绕过（如尝试 `symlink`、改 mode、越过挂载点直写） | MUST | ✅ dsh 真机（应用域 `symlink` `EACCES`、`chmod` 不落实）；⬜ 本工程复验 |
 | FR-011-013 | 授权与项目根状态 MUST 写入 `[oc-desktop]` 结构化日志（路径、授权结果、探针结果、时间戳），供真机取证 | MUST | `docs/工程规划-V2.md` §5.2（fail-visible 纪律） |
 

@@ -95,7 +95,7 @@
 
 ### 场景 4：不得承诺未获批权限
 
-- **Given** `READ_WRITE_DESKTOP_DIRECTORY` 为「不申请」
+- **Given** `READ_WRITE_DESKTOP_DIRECTORY` 为 `system_basic` + `user_grant`（2026-10-14 起由 `006-signing-identity` 声明并随 ACL 批次申请；未获批或用户未授权时**不可直写**）
 - **When** 审查技能正文
 - **Then** 技能中不存在「可直接写入桌面目录」类承诺；用户目录相关表述必须带授权与重启前置
 
