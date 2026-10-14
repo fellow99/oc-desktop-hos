@@ -164,7 +164,7 @@ hdc shell "hilog -x | grep oc-desktop"
 
 ### 6.3 验收口径
 
-- spec §5 七个场景全绿；「材料缺失 / 版本未递增 / 图标带 Alpha / release 档调试开关」四类守卫各被真实触发一次；`git status --porcelain` 在完成 debug 构建后无签名材料相关改动；`node scripts/collect-runtime.mjs --verify-only` 阶段 10.6/10.7 全绿（ACL 6 项在册 + JIT 两处 + overlay md5 一致）。
+- spec §5 七个场景全绿；「材料缺失 / 版本未递增 / 图标带 Alpha / release 档调试开关」四类守卫各被真实触发一次；`git status --porcelain` 在完成 debug 构建后无签名材料相关改动；`node scripts/collect-runtime.mjs --verify-only` **197 PASS 全绿**（权限声明面 24 项与 dsh 一致、其中 3 项需 ACL 在册、8 项带 `reason`+`usedScene`、声明顺序与 dsh 一致、overlay md5 一致）；`pwsh scripts/build-hap.ps1` 构建成功且包内 `module.json` 的 `requestPermissions` 为 24 项（与 dsh 集合一致）。
 
 ## 7. 文件清单
 

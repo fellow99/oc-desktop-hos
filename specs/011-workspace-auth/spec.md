@@ -42,7 +42,7 @@
 **不包含**：
 
 - 任意用户目录的**持久**访问（只走系统 Picker + 授权通道；不绕过系统权限模型）。
-- 桌面（`Desktop`）直写能力本身（`READ_WRITE_DESKTOP_DIRECTORY` 的**声明与 ACL 申请**归 `006-signing-identity`；本模块不提供桌面直写能力）。
+- 桌面（`Desktop`）直写这一**能力**的规格与实现（注：该能力是否存在取决于 `006-signing-identity` 声明的 `READ_WRITE_DESKTOP_DIRECTORY` 是否获批 + 用户是否在系统设置里授权；本模块的规格范围是「目录授权与项目根传递」，不单独定义该能力的验收口径）。
 - shell 执行本身（见 `specs/010-tool-shell/`）、数据目录与 sqlite（见 `specs/012-data-dirs-sqlite/`）。
 - 文件选择器 UI 的具体视觉与交互细节（属 UI 规格；本规格只固定通道与契约）。
 - 多工作区 / worktree 语义（`docs/工程规划-V2.md` §7.2 列为 Phase 2+）。
@@ -162,7 +162,7 @@
 
 **约束**
 
-- 约束 1：**`Desktop` 不在本模块提供直写能力**（`system_basic` + 上架障碍风险）；该权限自 2026-10-14 起由 `006-signing-identity` 依上游 `ACL申请清单-v1.md` 声明并随 ACL 批次申请，本模块 MUST NOT 自行声明，也不把「可直写桌面」作为产品承诺（上架前复核见 `docs/ACL申请清单.md` §7.3 ⬜-6）。
+- 约束 1：**本模块不自行声明 `Desktop` 权限**（`system_basic`，需 ACL + 上架前复核）；该权限自 2026-10-14 起由 `006-signing-identity` 依 dsh 声明面声明并随 ACL 批次申请（FR-011-011 例外）。桌面直写的**可用性**以「ACL 获批 + 用户授权」为前提，本模块 MUST NOT 假定其必然可用（上架前复核见 `docs/ACL申请清单.md` §7.3 ⬜-6）。
 - 约束 2：**应用域 `symlink` 不可用、`hardlink` 被拒、`chmod` 不落实**（dsh 真机）；目录管理实现 MUST 只使用 `mkdir` / `copy` / `rename` 语义。
 - 约束 3：**卸载清空授权** —— 任何「跨安装记忆授权」的设计都是错的。
 - 约束 4：**应用域是唯一可信观测点**：`hdc shell` 视角与应用程序视角可能不同（dsh 真机：`hdc shell` 看不到 `/data/service/hnp`，应用却能访问）；授权与可写性的取证 MUST 在应用域完成。

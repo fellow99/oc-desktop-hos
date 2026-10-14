@@ -181,7 +181,12 @@ const APP_KEEP = new Set([
  * 断言实现见 stage10Guards 10.6 / 10.6b / 10.6c。
  */
 
-/** 必须**不得**出现的受限/上架障碍权限（工程规划 §8.3；dsh 与本工程均不声明） */
+/**
+ * 必须**不得**出现的权限：受限 / 上架障碍（工程规划 §8.3）＋ specs/006 FR-006-013 的
+ * 「其余受限项一律不申请」清单（四个 `*PLUGIN*`、全盘直写、`*SANDBOX_ACCESS_MANAGER*`、
+ * 设备无关二进制证书）。dsh 与本工程都不声明；断言不存在，防止误加。
+ * 注：`ohos.permission.SANDBOX_ACCESS_MANAGER` 是 `..._MANAGER_EXT` 的前缀子串，两条一起覆盖。
+ */
 const FORBIDDEN_PERMISSIONS = [
   'ohos.permission.CUSTOM_SANDBOX',
   'ohos.permission.RUN_ANY_CODE',
@@ -189,6 +194,15 @@ const FORBIDDEN_PERMISSIONS = [
   //    该名字不存在 ⇒ 声明真名时断言不会命中，属静默失效，2026-10-14 修正）
   'ohos.permission.kernel.LOAD_INDEPENDENT_LIBRARY',
   'ohos.permission.ALLOW_EXTERNAL_NATIVE_CODE',
+  'ohos.permission.ACCESS_USER_FULL_DISK',
+  'ohos.permission.READ_WRITE_USER_FILE',
+  'ohos.permission.kernel.SUPPORT_PLUGIN',
+  'ohos.permission.INSTALL_PLUGIN_BUNDLE',
+  'ohos.permission.UNINSTALL_PLUGIN_BUNDLE',
+  'ohos.permission.PLUGIN_UPDATE',
+  'ohos.permission.SANDBOX_ACCESS_MANAGER',
+  'ohos.permission.GET_DEVICE_INDEPENDENT_BINARY_CERT',
+  'ohos.permission.SET_DEVICE_INDEPENDENT_BINARY_CERT_STATUS',
 ];
 
 /**
@@ -705,26 +719,47 @@ function stage10Guards(manifest) {
     for (const permission of REQUIRED_PERMISSIONS) {
       guard(text.includes(permission), `已声明权限 ${permission}`);
     }
-    // 10.6b 带 `reason` 的项必须同时带 `usedScene`（specs/006 FR-006-012 / FR-006-026）
+    // 10.6b 带 `reason` 的项必须带 `reason` + `usedScene`（`EntryAbility` / `when: inuse`）
+    //       （specs/006 FR-006-012 / FR-006-026 —— 后者正是「abilities 必须指向真实存在的 Ability」）
     // 匹配口径：先按 `"name": "<perm>"` 定位条目，再取到**该条目自身的 `}`** 为止（`[\s\S]*?` 在
-    // 第一个 `}` 处停止 ⇒ 恰好覆盖嵌套的 `usedScene` 对象），最后断言该片段含 `usedScene`。
-    // 不用「N 字符窗口」——那样会被**相邻条目**的 usedScene 误判为通过（负向用例已实测）。
+    // 第一个 `}` 处停止 ⇒ 恰好覆盖嵌套的 `usedScene` 对象）。不用「N 字符窗口」——那样会被
+    // **相邻条目**的 usedScene 误判为通过（负向用例已实测）。
+    // 前提：`"name"` 必须是条目的第一个键（当前清单满足）；若将来字段重排，本断言会**响亮失败**
+    // 而不是静默放过 —— 那时按新的字段顺序调整本正则即可。
     for (const permission of REASON_REQUIRED_PERMISSIONS) {
       const entry = text.match(
         new RegExp(`\\{\\s*"name"\\s*:\\s*"${permission.replace(/\./g, '\\.')}"[\\s\\S]*?\\}`),
       );
+      const body = entry ? entry[0] : '';
+      for (const [what, needle] of [
+        ['reason', '"reason"'],
+        ['usedScene', 'usedScene'],
+        ['abilities=EntryAbility', '"EntryAbility"'],
+        ['when=inuse', '"inuse"'],
+      ]) {
+        guard(body.includes(needle), `带 reason 的权限含 ${what}：${permission}`);
+      }
+    }
+    // 10.6c 必须**同时**出现在 requestPermissions 与 definePermissions 的项：
+    //       在各段内分别恰好 1 次（只在全文计数会被「同一段写两次 + 另一段删除」骗过）。
+    const defineIdx = text.indexOf('"definePermissions"');
+    guard(defineIdx > 0, 'web_engine 清单含 definePermissions 段');
+    const [requestSeg, defineSeg] = [text.slice(0, defineIdx), text.slice(defineIdx)];
+    for (const permission of DUAL_DECLARED_PERMISSIONS) {
+      const inRequest = requestSeg.split(permission).length - 1;
+      const inDefine = defineSeg.split(permission).length - 1;
       guard(
-        Boolean(entry) && entry[0].includes('usedScene'),
-        `带 reason 的权限同时带 usedScene ${permission}`,
+        inRequest === 1 && inDefine === 1,
+        `${permission} 分列 requestPermissions(实际 ${inRequest}) 与 definePermissions(实际 ${inDefine})`,
       );
     }
-    // 10.6c 必须同时出现在 requestPermissions 与 definePermissions 的项（各恰好 2 处）
-    for (const permission of DUAL_DECLARED_PERMISSIONS) {
-      const hits = text.split(permission).length - 1;
-      guard(
-        hits === 2,
-        `${permission} 出现在 requestPermissions + definePermissions 两处（实际 ${hits} 处）`,
-      );
+    // 10.6e 声明顺序 MUST 与 dsh 一致（specs/006 FR-006-025 的「含顺序」）：
+    //       用「首次出现下标严格递增」判定 —— 不解析 json5 也能发现重排/挪位。
+    let prevIdx = -1;
+    for (const permission of REQUIRED_PERMISSIONS) {
+      const idx = text.indexOf(permission);
+      guard(idx > prevIdx, `声明顺序与 dsh 一致：${permission}（位置 ${idx} > 前一项 ${prevIdx}）`);
+      prevIdx = idx;
     }
   } else {
     guard(false, `web_engine module.json5 存在 ${webEngineManifest}`);
@@ -738,6 +773,9 @@ function stage10Guards(manifest) {
     guard(text.includes('"taskKeeping"'), 'entry EntryAbility 已声明 backgroundModes: ["taskKeeping"]');
     for (const permission of PRUNED_PERMISSIONS) {
       guard(!text.includes(permission), `entry 未声明已剪裁权限 ${permission}`);
+    }
+    for (const permission of FORBIDDEN_PERMISSIONS) {
+      guard(!text.includes(permission), `entry 未声明受限权限 ${permission}`);
     }
   } else {
     guard(false, `electron module.json5 存在 ${entryManifest}`);

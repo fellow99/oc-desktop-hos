@@ -18,7 +18,7 @@
 | **A1** | `ohos.permission.READ_PASTEBOARD` | ACL（受限） | 高 | 剪贴板文本/图片粘贴到对话输入框 | ✅ 已声明；⬜ 待随批次提交 |
 | **A2** | `ohos.permission.READ_WRITE_DESKTOP_DIRECTORY` | ACL（受限） | 中 | 桌面目录工作区直写 | ✅ 已声明；⬜ 待随批次提交（⚠️ 上架前复核，见 §7.3 ⬜-6） |
 | **B** | **21 项开放权限**（见 §4） | 免 ACL | 高 | 网络 / 目录访问 / 打印 / 传感器 / 后台保活 等 | ✅ 已声明（与 dsh 逐项一致） |
-| ❌ | 4 项受限或上架障碍 + 10 项外壳默认已剪裁 + 四个 `*PLUGIN*` 等 | — | — | — | ❌ **不申请**，守卫断言其不存在（见 §5） |
+| ❌ | **13 项**受限 / 上架障碍 / 无正当用途 + **10 项**外壳默认已剪裁 | — | — | — | ❌ **不申请**，守卫 `FORBIDDEN_PERMISSIONS`(13) 与 `PRUNED_PERMISSIONS`(10) 对**两份清单**都断言其不存在（见 §5.1 / §5.2）；§5.3 的两项（AGC 二进制证书、可选 `ALLOW_COREDUMP`）无权限名可断言 |
 
 **一句话**：本工程要做的是 **① 按本包名提交 3 项 ACL 的工单**（`kernel.ALLOW_WRITABLE_CODE_MEMORY` 是关键路径、周期不可控，应尽早在 AGC 开工单；`READ_PASTEBOARD` / `READ_WRITE_DESKTOP_DIRECTORY` 同批提交），**② 保持声明面与 dsh 一致**（已完成），其余一律**不申请**。
 
@@ -120,14 +120,20 @@
 
 ## 5. 明确**不申请**的项与理由
 
-### 5.1 受限 / 上架障碍权限（守卫 `FORBIDDEN_PERMISSIONS` 断言**不存在**）
+### 5.1 受限 / 上架障碍 / 无正当用途权限（守卫 `FORBIDDEN_PERMISSIONS` 断言**不存在**，共 13 项）
 
-| 项 | 类型 | 不申请的理由 |
+| 权限名 | 类型 | 不申请的理由 |
 |---|---|---|
 | `ohos.permission.CUSTOM_SANDBOX` | ACL（`system_basic`） | 系统级、仅内部可得且高风险变更；**不得**用它替代进程沙箱（它改的是应用自身沙箱类型） |
 | `ohos.permission.RUN_ANY_CODE` | ACL（`system_basic`） | 无正当第三方用途；申请会降低整批可信度 |
 | `ohos.permission.kernel.LOAD_INDEPENDENT_LIBRARY` | ACL（`system_basic` / since 20） | 服务于「加载二进制证书签名的共享库」；本工程不随包分发并执行自有 ELF（服务端跑在 Electron 自带 Node 内）。⚠️ 若后续引入自编译原生模块需回来复评 |
 | `ohos.permission.ALLOW_EXTERNAL_NATIVE_CODE` | ACL（`system_basic` / since 23 / 仅 2in1） | 同上（⚠️ 注意：**不存在** `ohos.permission.kernel.ALLOW_EXTERNAL_NATIVE_CODE` 这个名字） |
+| `ohos.permission.ACCESS_USER_FULL_DISK` / `ohos.permission.READ_WRITE_USER_FILE` | ACL（`system_basic` / 仅 2in1） | 只需「用户显式选定的项目目录 + 文档/下载/桌面目录」，不做全盘直写 |
+| `ohos.permission.kernel.SUPPORT_PLUGIN` / `ohos.permission.INSTALL_PLUGIN_BUNDLE` / `ohos.permission.UNINSTALL_PLUGIN_BUNDLE` / `ohos.permission.PLUGIN_UPDATE` | ACL（`system_basic`） | 本工程插件是 **Node 包**，不是鸿蒙插件包（见 `specs/201-plugin-runtime/`） |
+| `ohos.permission.SANDBOX_ACCESS_MANAGER`（含 `..._EXT`） | `system_core` | 仅系统应用 |
+| `ohos.permission.GET_DEVICE_INDEPENDENT_BINARY_CERT` / `ohos.permission.SET_DEVICE_INDEPENDENT_BINARY_CERT_STATUS` | `system_core` / 仅 2in1 | 不可得 |
+
+> 这 13 个名字与 `specs/006-signing-identity/spec.md` 的 FR-006-013（MUST NOT 申请）逐项对应；`collect-runtime.mjs` 阶段 10.6 / 10.6d 对 **web_engine 与 entry 两份清单**都断言其不存在。
 
 ### 5.2 上游外壳默认声明、但本工程与 dsh **都剪掉**的 10 项（守卫 `PRUNED_PERMISSIONS` 断言**不存在**）
 
@@ -143,17 +149,12 @@
 
 > 这 10 项在上游外壳（`harmonypc-electron` v37.2.3）的默认 `module.json5` 里存在；本工程与 dsh 都从声明面移除。守卫断言其不存在，防止将来重新拷贝外壳时权限面被悄悄放大。
 
-### 5.3 其它不申请项
+### 5.3 其它不申请项（无权限名可断言，或为可选声明）
 
 | 项 | 类型 | 不申请的理由 |
 |---|---|---|
-| **AGC 二进制证书（`certType: 4`）** | 证书（非权限） | 本工程**不随包分发并执行自有 ELF**：服务端跑在 Electron 自带 Node 内，搜索与终端均降级；且二进制证书为受限开放、需企业资质与在线工单（dsh 记录：个人主体不可得）。⇒ 该路线整体不做 |
-| `ohos.permission.ACCESS_USER_FULL_DISK` / `READ_WRITE_USER_FILE` | ACL（`system_basic` / 2in1） | 本工程只需要「用户显式选定的项目目录 + 文档/下载/桌面目录」；不做全盘直写，也不作为上架承诺 |
-| `ohos.permission.kernel.SUPPORT_PLUGIN` | ACL | 仅当插件是**鸿蒙插件包**时需要；本工程插件是 **Node 包**（见 `specs/201-plugin-runtime/`） |
-| `ohos.permission.INSTALL_PLUGIN_BUNDLE` / `UNINSTALL_PLUGIN_BUNDLE` / `PLUGIN_UPDATE` | ACL | 同上 |
-| `ohos.permission.SANDBOX_ACCESS_MANAGER` / `..._EXT` | `system_core` | 仅系统应用 |
-| `ohos.permission.GET_DEVICE_INDEPENDENT_BINARY_CERT` / `SET_DEVICE_INDEPENDENT_BINARY_CERT_STATUS` | `system_core` / 仅 2in1 | 不可得 |
-| `ohos.permission.ALLOW_COREDUMP` | 开放（`normal` / `provisionEnable: false` / since 23 / 2in1） | 可选声明（非 ACL）；本工程默认**不声明**（⬜ 如需崩溃转储再评估） |
+| **AGC 二进制证书（`certType: 4`）** | 证书（**非权限**，故不在 `FORBIDDEN_PERMISSIONS` 内） | 本工程**不随包分发并执行自有 ELF**：服务端跑在 Electron 自带 Node 内，搜索与终端均降级；且二进制证书为受限开放、需企业资质与在线工单（dsh 记录：个人主体不可得）。⇒ 该路线整体不做 |
+| `ohos.permission.ALLOW_COREDUMP` | 开放（`normal` / `provisionEnable: false` / since 23 / 2in1） | 可选声明（**非 ACL**）；本工程默认**不声明**（⬜ 如需崩溃转储再评估），未加入 `FORBIDDEN_PERMISSIONS` |
 
 > **补充说明（易误判）**：`better_sqlite3.node` 放在 HAP 的 `libs/arm64-v8a/` 属于**随包原生库**，与「执行自有 ELF」是两件事，**不需要二进制证书**，也**不需要** `ALLOW_EXTERNAL_NATIVE_CODE`。
 
@@ -273,11 +274,12 @@
 
 ### 11.1 回退口径（若上架受阻）
 
-若 `READ_WRITE_DESKTOP_DIRECTORY` 的 `system_basic` 在上架审核中被判定为障碍，按以下顺序回退（三步，缺一即回到不一致状态）：
+若 `READ_WRITE_DESKTOP_DIRECTORY` 的 `system_basic` 在上架审核中被判定为障碍，按以下顺序回退（**四步，缺一即回到不一致状态**）：
 
 1. `web_engine/src/main/module.json5` **与** `runtime-overlays/web_engine/src/main/module.json5` 同时删除该项（两者必须保持同 md5）；
-2. `scripts/collect-runtime.mjs`：把 `'ohos.permission.READ_WRITE_DESKTOP_DIRECTORY'` 从 `REQUIRED_PERMISSIONS` 移入 `FORBIDDEN_PERMISSIONS`；
-3. 同步本文件 §1/§3.3/§4/§7.2/§9、`specs/006-signing-identity/{spec,plan}.md`、`specs/011-workspace-auth/{spec,plan}.md`、`docs/工程规划-V2.md` §8.1/§8.3、`README.md`，并**重建发布 Profile**（ACL 变化后必须重建）。
+2. `scripts/collect-runtime.mjs`：把 `'ohos.permission.READ_WRITE_DESKTOP_DIRECTORY'` 从 `REQUIRED_PERMISSIONS` **与** `REASON_REQUIRED_PERMISSIONS` 移出，并移入 `FORBIDDEN_PERMISSIONS`（漏掉 `REASON_REQUIRED_PERMISSIONS` 会让阶段 10.6b 直接失败）；
+3. 三套 locale 的 `web_engine/src/main/resources/<locale>/element/string.json`（两份副本）可同时删除不再被引用的 `desktop_dir` key（可选，但不删会留下无用资源）；
+4. 同步本文件 §1/§3.3/§4/§5.1/§7.2/§9、`specs/006-signing-identity/{spec,plan}.md`、`specs/011-workspace-auth/{spec,plan}.md`、`docs/工程规划-V2.md` §8.1/§8.3、`README.md`，并**重建发布 Profile**（ACL 变化后必须重建）。
 
 回退后重新执行 `node scripts/collect-runtime.mjs --verify-only`（阶段 10.6 应再次断言该权限**不存在**）。
 
