@@ -34,3 +34,8 @@
 *.asar  -text
 *.zip   -text
 *.gz    -text
+
+# 无扩展名的运行时启动器（ELF）：不在上面任何一个通配符覆盖范围内，
+# 而它同样是「必须与发行版逐字节一致」的资产（守卫 10.13 会比对），
+# 因此按路径显式标记，不依赖 Git 的二进制自动探测。
+web_engine/src/main/resources/resfile/electron -text

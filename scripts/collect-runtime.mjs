@@ -275,7 +275,17 @@ const PLACEHOLDER_ICON_RGB = [31, 111, 235]; // #1F6FEB
 
 // ------------------------------------------------------------------ 阶段 1
 
+/**
+ * 本次运行内已解析的运行时源码树。
+ *
+ * 阶段 1 与阶段 10 的 10.13 都要用同一份运行时资产作比对基准；不缓存的话阶段 10 会**再解析一次**，
+ * 而在缓存目录结构未被 findShellRoot 命中时那一次解析会**重新解压整个发行版归档**（~370 MB zip /
+ * 1.8 GB 目录树）——既慢，又会让 `--verify-only` 在没有归档的机器上抛 ENOENT。
+ */
+let cachedShellRoot = null;
+
 function stage1LocateRuntime() {
+  if (cachedShellRoot) return cachedShellRoot;
   banner(1, '取得运行时源码树');
   if (RUNTIME_SOURCE !== '') {
     const dir = resolve(RUNTIME_SOURCE);
@@ -283,7 +293,8 @@ function stage1LocateRuntime() {
     const shellRoot = findShellRoot(dir);
     require_(shellRoot, `--runtime-source 中未找到含 electron + web_engine 的 ohos_hap 目录: ${dir}`);
     log(1, `使用预解压运行时: ${shellRoot}`);
-    return shellRoot;
+    cachedShellRoot = shellRoot;
+    return cachedShellRoot;
   }
 
   const manifest = readJson(MANIFEST_PATH);
@@ -291,7 +302,8 @@ function stage1LocateRuntime() {
   const shellRoot = findShellRoot(cacheRoot);
   if (shellRoot) {
     log(1, `复用已解压运行时缓存: ${shellRoot}`);
-    return shellRoot;
+    cachedShellRoot = shellRoot;
+    return cachedShellRoot;
   }
 
   mkdirp(cacheRoot);
@@ -313,13 +325,22 @@ function stage1LocateRuntime() {
   const resolved = findShellRoot(join(cacheRoot, 'extracted'));
   require_(resolved, `解压后未找到 ohos_hap（electron + web_engine）: ${join(cacheRoot, 'extracted')}`);
   log(1, `运行时已解压: ${resolved}`);
-  return resolved;
+  cachedShellRoot = resolved;
+  return cachedShellRoot;
 }
 
 /** 在给定根下（最多 3 层）寻找同时含 electron/ 与 web_engine/ 的 ohos_hap 目录 */
 function findShellRoot(root) {
   if (!isDir(root)) return null;
-  const candidates = [root, join(root, 'ohos_hap'), join(root, 'libelectron', 'ohos_hap')];
+  // `extracted/libelectron/ohos_hap` 是发行版归档解压后的真实落点：不列入候选的话
+  // 缓存复用分支永远不命中，每次运行都会重新解压归档。
+  const candidates = [
+    root,
+    join(root, 'ohos_hap'),
+    join(root, 'libelectron', 'ohos_hap'),
+    join(root, 'extracted', 'ohos_hap'),
+    join(root, 'extracted', 'libelectron', 'ohos_hap'),
+  ];
   for (const candidate of candidates) {
     if (isDir(join(candidate, 'electron')) && isDir(join(candidate, 'web_engine'))) return candidate;
   }
@@ -613,9 +634,18 @@ function stage10Guards(manifest) {
   const appDir = join(PROJECT_ROOT, APP_RESFILE_DIR);
   const leftovers = listDir(appDir).filter((entry) => !APP_KEEP.has(entry));
   guard(leftovers.length === 0, `resfile/app 无应用无关残留${leftovers.length ? `（发现: ${leftovers.join(', ')}）` : ''}`);
-  for (const [, to] of APP_FILES) {
+  for (const [from, to] of APP_FILES) {
     const p = join(PROJECT_ROOT, to);
-    guard(isFile(p), `App 文件就位 ${to.replace(`${APP_RESFILE_DIR}/`, '')}`);
+    const label = to.replace(`${APP_RESFILE_DIR}/`, '');
+    guard(isFile(p), `App 文件就位 ${label}`);
+    // 与 `src-main/` 源文件**逐字节一致**：`main.js` 等要同时存在于两处（源 + 包内资源），
+    // 只校验「存在」会漏掉「改了源忘了同步镜像」——那时守卫全绿、打出的包却仍是旧逻辑。
+    // `build-debug.ps1` 不跑本脚本，所以这条守卫是这条不变量的唯一自动兜底。
+    const src = join(PROJECT_ROOT, from);
+    guard(
+      isFile(src) && isFile(p) && md5File(src) === md5File(p),
+      `App 文件与 src-main 源一致 ${label}（${from}）`,
+    );
   }
 
   // 10.11 原生注入：libc++ 与 better_sqlite3.node 的 dlopen 锚点均由本脚本投放到 libs/arm64-v8a/
@@ -662,16 +692,35 @@ function stage10Guards(manifest) {
   //   本守卫是这条约束的唯一自动兜底：`.gitattributes` 只防未来复发，防不住已有损坏。）
   {
     const resfileRel = 'web_engine/src/main/resources/resfile';
-    const resfileSrcDir = join(stage1LocateRuntime(), resfileRel);
-    if (!isDir(resfileSrcDir)) {
+    const projectResfileDir = join(PROJECT_ROOT, resfileRel);
+    // 运行时源码树不可得时**明确失败**而不是抛未捕获的 ENOENT（--verify-only 路径没有归档时
+    // 曾会直接崩在 fileSize 上，看不出是守卫没跑还是守卫失败）。
+    let resfileSrcDir = null;
+    try {
+      resfileSrcDir = join(stage1LocateRuntime(), resfileRel);
+    } catch (error) {
+      guard(false, `取得运行时源码树以比对 ${resfileRel}（${error && error.message}）`);
+    }
+    if (resfileSrcDir !== null && !isDir(resfileSrcDir)) {
       guard(false, `运行时 resfile 目录存在 ${resfileRel}`);
-    } else {
+      resfileSrcDir = null;
+    }
+    if (resfileSrcDir !== null) {
+      const guarded = new Set();
       for (const file of findFiles(resfileSrcDir, () => true)) {
         const relPath = rel(resfileSrcDir, file);
-        // resources/app 由本工程自行投放（阶段 4/8），不属运行时资产，另行守卫
-        if (relPath.startsWith('resources/')) continue;
-        const dest = join(PROJECT_ROOT, resfileRel, relPath);
-        guard(isFile(dest) && md5File(dest) === md5File(file), `resfile 二进制与运行时一致 ${relPath}`);
+        // 只跳过 `resources/app/`（由本工程阶段 4/8 投放，已由 10.10 与 `src-main` 逐字节比对）；
+        // 若宽到整个 `resources/`，上游一旦新增 `resources/app.asar` 之类就会被**静默漏检**。
+        if (relPath.startsWith('resources/app/')) continue;
+        guarded.add(relPath);
+        const dest = join(projectResfileDir, relPath);
+        guard(isFile(dest) && md5File(dest) === md5File(file), `resfile 运行时资产与发行版一致 ${relPath}`);
+      }
+      // 反向检查：工程侧多出的文件同样要报错（迭代是源码驱动的，多出来的文件否则永远不可见）。
+      for (const file of findFiles(projectResfileDir, () => true)) {
+        const relPath = rel(projectResfileDir, file);
+        if (relPath.startsWith('resources/app/')) continue;
+        guard(guarded.has(relPath), `resfile 无发行版之外的额外文件 ${relPath}`);
       }
     }
   }
