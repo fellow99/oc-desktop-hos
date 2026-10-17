@@ -22,6 +22,7 @@
  *   node scripts/collect-app.mjs              投放 + 断言 + node --check
  *   node scripts/collect-app.mjs --check-only 只跑断言与语法检查（不写 resfile）
  *   node scripts/collect-app.mjs --self-test  反向用例：证明断言能失败（注入违例到临时文件）
+ *   node scripts/collect-app.mjs --force-plugin-runtime  强制重建 git 插件运行时依赖（默认幂等跳过）
  */
 import { spawnSync } from "node:child_process"
 import { mkdtempSync } from "node:fs"
@@ -43,6 +44,7 @@ import {
   removeTree,
   require_,
   run,
+  runOrFail,
   sha256File,
   warn,
   writeText,
@@ -56,6 +58,13 @@ const PLUGIN_DEST_DIR = join(PROJECT_ROOT, APP_RESFILE_DIR, "plugins")
 const PLUGIN_PREFIX = "oc-plugin-"
 /** 唯一允许的 spawn 目标（设备自带 POSIX shell） */
 const ALLOWED_SPAWN_TARGET = "/system/bin/sh"
+
+/** 204：git 插件运行时依赖的物化 pin（与插件 lib/runtime.js 的断言必须一致） */
+const GIT_PLUGIN_NAME = "oc-plugin-git"
+const ISOMORPHIC_GIT_VERSION = "1.44.2"
+const JSDIFF_VERSION = "9.0.0"
+const GIT_RUNTIME_PACKAGES = 56
+const GIT_RUNTIME_MAX_BYTES = 12 * 1024 * 1024
 /** 上架/平台禁用词（plugins/README.md §4） */
 /**
  * 上架禁用词：只约束**用户可见文案**（工具的 name / description 会出现在界面上），
@@ -176,7 +185,35 @@ function discoverPlugins() {
 async function assertToolMetadata(plugins) {
   banner(3, "导入式工具元数据检查");
   // 非工具型插件（如 oc-plugin-workspace-roots：只注册 RPC，不注册工具）期望注册 0 个工具。
-  const expected = { "oc-plugin-harmony-shell": ["shell"], "oc-plugin-harmony-search": ["grep", "glob"], "oc-plugin-workspace-roots": [] }
+  const expected = {
+    "oc-plugin-harmony-shell": ["shell"],
+    "oc-plugin-harmony-search": ["grep", "glob"],
+    "oc-plugin-workspace-roots": [],
+    // 204：21 个 git 工具（一动词一工具，见 specs/204-plugin-git）
+    "oc-plugin-git": [
+      "git_init",
+      "git_clone",
+      "git_status",
+      "git_diff",
+      "git_log",
+      "git_show",
+      "git_add",
+      "git_commit",
+      "git_branch",
+      "git_checkout",
+      "git_reset",
+      "git_merge",
+      "git_cherry_pick",
+      "git_revert",
+      "git_stash",
+      "git_tag",
+      "git_remote",
+      "git_fetch",
+      "git_pull",
+      "git_push",
+      "git_config",
+    ],
+  }
   let total = 0
   for (const plugin of plugins) {
     const moduleUrl = pathToFileURL(join(plugin.directory, "index.js")).href
@@ -197,7 +234,13 @@ async function assertToolMetadata(plugins) {
       update: () => {},
       remove: (name) => removed.push(name),
     }
-    const context = { tool: { transform: async (callback) => callback(editor) }, rpc: { register: async () => ({ dispose: () => {} }) } }
+    const context = {
+      // 让插件拿到与运行期一致的形状（location / vcs / rpc）；缺失会让 setup 走降级路径，掩盖真实问题
+      location: { directory: process.cwd(), project: { directory: process.cwd() } },
+      tool: { transform: async (callback) => callback(editor) },
+      vcs: { transform: async (callback) => callback({ add: () => {}, default: { get: () => undefined, set: () => {} } }) },
+      rpc: { register: async () => ({ dispose: () => {} }) },
+    }
     await definition.setup(context)
     const names = added.map((tool) => tool.name).sort()
     const want = (expected[plugin.name] ?? []).slice().sort()
@@ -323,6 +366,93 @@ function selfTest() {
   if (failed.length > 0) fail(`反向用例未按预期失败：${failed.join("、")}`)
 }
 
+// ------------------------------------------------------------------ 204：git 插件运行时物化
+
+/**
+ * 把 `isomorphic-git` + `diff` 及其整棵闭包物化到**插件自己的** `node_modules/`。
+ *
+ * 为什么落在插件目录内：启动期 `main.js materializePlugins()` 用 `fs.cpSync(recursive)` 复制的是
+ * **插件目录**，落在别处不会被带到设备；而插件加载走真实 ESM `import()`，裸包名解析优先查
+ * 插件目录下的 `node_modules/`。两者叠起来，插件目录内嵌套是唯一「复制得走 + 解析得到」的位置。
+ *
+ * 断言失败即抛错（不静默产出空包）；`--force-plugin-runtime` 可强制重建。
+ */
+function collectPluginRuntime(plugins) {
+  banner(3, "物化 git 插件运行时依赖（isomorphic-git + diff）")
+  const plugin = plugins.find((entry) => entry.name === GIT_PLUGIN_NAME)
+  require_(plugin, `未发现插件 ${GIT_PLUGIN_NAME}（运行时物化没有落点）`)
+  const destination = join(PLUGIN_DEST_DIR, GIT_PLUGIN_NAME, "node_modules")
+  const force = args.has("force-plugin-runtime")
+
+  if (!force && isFile(join(destination, "isomorphic-git", "package.json")) && isFile(join(destination, "diff", "package.json"))) {
+    const gitVersion = JSON.parse(readText(join(destination, "isomorphic-git", "package.json"))).version
+    const diffVersion = JSON.parse(readText(join(destination, "diff", "package.json"))).version
+    if (gitVersion === ISOMORPHIC_GIT_VERSION && diffVersion === JSDIFF_VERSION) {
+      assertGitRuntime(destination)
+      log(3, `已存在且版本一致（isomorphic-git@${gitVersion} / diff@${diffVersion}），跳过物化`)
+      return
+    }
+    log(3, `版本不一致（实际 isomorphic-git@${gitVersion} / diff@${diffVersion}），重新物化`)
+  }
+
+  const staging = mkdtempSync(join(tmpdir(), "oc-git-runtime-"))
+  try {
+    runOrFail(
+      "npm",
+      [
+        "install",
+        "--omit=dev",
+        "--no-audit",
+        "--no-fund",
+        "--ignore-scripts",
+        `isomorphic-git@${ISOMORPHIC_GIT_VERSION}`,
+        `diff@${JSDIFF_VERSION}`,
+      ],
+      { cwd: staging },
+    )
+    removeTree(destination)
+    copyTree(join(staging, "node_modules"), destination)
+  } finally {
+    removeTree(staging)
+  }
+  assertGitRuntime(destination)
+}
+
+/** 产物断言：版本、入口、包数、体积、无原生模块 */
+function assertGitRuntime(nodeModules) {
+  const gitManifest = join(nodeModules, "isomorphic-git", "package.json")
+  require_(isFile(gitManifest), `缺少 ${gitManifest}`)
+  const gitVersion = JSON.parse(readText(gitManifest)).version
+  require_(
+    gitVersion === ISOMORPHIC_GIT_VERSION,
+    `isomorphic-git 版本不符：期望 ${ISOMORPHIC_GIT_VERSION}，实际 ${gitVersion}`,
+  )
+  require_(
+    isFile(join(nodeModules, "isomorphic-git", "http", "node", "index.js")),
+    "缺少 isomorphic-git/http/node/index.js 入口",
+  )
+
+  const diffManifest = join(nodeModules, "diff", "package.json")
+  require_(isFile(diffManifest), `缺少 ${diffManifest}`)
+  const diffVersion = JSON.parse(readText(diffManifest)).version
+  require_(diffVersion === JSDIFF_VERSION, `diff 版本不符：期望 ${JSDIFF_VERSION}，实际 ${diffVersion}`)
+
+  // 只数真实包目录（排除 `.bin` / `.package-lock.json` 这类 npm 元数据）
+  const packages = listDir(nodeModules).filter((name) => !name.startsWith(".")).length
+  require_(packages === GIT_RUNTIME_PACKAGES, `运行时包数不符：期望 ${GIT_RUNTIME_PACKAGES}，实际 ${packages}`)
+
+  const files = findFiles(nodeModules, () => true)
+  const bytes = files.reduce((total, file) => total + fileSize(file), 0)
+  require_(bytes <= GIT_RUNTIME_MAX_BYTES, `运行时体积超限：${bytes} > ${GIT_RUNTIME_MAX_BYTES}`)
+  const native = files.filter((file) => /\.(node|so)$/iu.test(file))
+  require_(native.length === 0, `运行时里出现原生模块（设备不可用）：${native.slice(0, 5).join(", ")}`)
+
+  log(
+    3,
+    `git 运行时断言通过：isomorphic-git@${gitVersion} + diff@${diffVersion}，${packages} 包 / ${(bytes / 1024 / 1024).toFixed(1)} MB`,
+  )
+}
+
 // ------------------------------------------------------------------ main
 
 async function main() {
@@ -348,6 +478,8 @@ async function main() {
 
   const copied = collectPlugins(plugins)
   const scripts = copied.filter((entry) => entry.relative.endsWith(".js"))
+  // 204：git 插件的第三方依赖物化（必须在源码投放之后：投放会先清空目标目录）
+  collectPluginRuntime(plugins)
   require_(scripts.length > 0, "投放结果里没有任何 .js（插件入口缺失）")
   for (const entry of scripts) checkJavaScript(entry.destination, entry.relative)
   log(3, `node --check 全部通过（${scripts.length} 个 .js，含 ESM 复核）`)

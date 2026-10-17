@@ -1,0 +1,12 @@
+{
+  "name": "oc-plugin-git",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "description": "纯 JS 的 git 能力：21 个 git 工具、VCS provider 覆盖、凭据 RPC（设备上没有 git 二进制）",
+  "dependencies": {
+    "isomorphic-git": "1.44.2",
+    "diff": "9.0.0"
+  }
+}

@@ -39,3 +39,6 @@ signing.release.local.json
 !signing.release.local.json.sample
 # 本地签名材料目录（.p12/.cer/.p7b/.csr + material 解密密钥链）
 /.ohos/
+
+# ---- 204：git 插件运行时（构建期由 collect-app.mjs 的 collectPluginRuntime 物化，不入库）----
+/web_engine/src/main/resources/resfile/resources/app/plugins/*/node_modules/

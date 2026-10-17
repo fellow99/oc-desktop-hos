@@ -89,6 +89,12 @@ plugins/
    插件与服务端同进程同权限，spawn 还会旁路工具层路径围栏；
 3. **不依赖原生模块**：无 `.node` / `.so` 依赖（glibc ELF 不可执行，自有 ELF 需二进制证书；§7.2、§7.3）。
 
+**纯 JS 第三方依赖例外（需求 204 起）**：允许插件在 `package.json` 的 `dependencies` 里声明**纯 JS** 第三方包
+（无 `.node`、无 `.so`、无 spawn、无平台二进制），由 `scripts/collect-app.mjs` 的 `collectPluginRuntime()`
+在构建期物化到**插件自己的** `node_modules/`（resfile 目的地，不入库、运行时仍不联网安装）。
+已登记：`oc-plugin-git` → `isomorphic-git@1.44.2` + `diff@9.0.0`（56 包 / 7.6 MB）。
+物化目录必须落在插件目录内：启动期 `materializePlugins()` 只整目录复制插件，裸包名解析也优先查它。
+
 另外两条现实约束：
 
 - **无热重载**：本工程设 `OPENCODE_FILEWATCHER_DISABLE=1`，watcher 为空实现 → 改插件需重启服务端/应用（§7.5）；
@@ -109,6 +115,7 @@ plugins/
 |---|---|---|---|
 | [`oc-plugin-harmony-shell`](./oc-plugin-harmony-shell/) | 覆盖 `shell` | 上游 `shell` 走 cross-spawn 并等待子进程 `exit`/`close` 事件；本设备**永不触发**这些事件 ⇒ 工具挂死。改为「常驻 `/system/bin/sh` + 随机哨兵行」，结束判定回到 stdout | `context.tool.transform(e => (e.remove("shell"), e.add(...)))` |
 | [`oc-plugin-harmony-search`](./oc-plugin-harmony-search/) | 覆盖 `grep`、`glob` | 上游两者**必然**经 `Ripgrep.Service` spawn `rg`，而平台表无 `arm64-ohos` 键 ⇒ 抛 `unsupported platform for ripgrep`。改为纯 JS 遍历 + 正则 | 同上 |
+| [`oc-plugin-git`](./oc-plugin-git/) | 新增 21 个 `git_*` 工具；覆盖 VCS provider（`id: "git"`）；注册 4 个凭据 RPC | 设备上没有 `git` 二进制，上游 `opencode.vcs.git` 必然 spawn 失败；本插件把纯 JS 的 `isomorphic-git` 嵌入服务端进程，并让「设置 → Git」页（补丁 0008）管理 `~/.git-credentials` | `context.tool.transform` / `context.vcs.transform` / `context.rpc.register` |
 
 规格与验收：`specs/102-harmony-js-tools/{spec,plan,tasks,test-cases}.md`；
 host 侧测试：`node scripts/test-harmony-plugins.mjs`；

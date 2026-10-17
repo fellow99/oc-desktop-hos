@@ -108,8 +108,11 @@ hdc shell aa start -a EntryAbility -b org.fellow99.oc.OCDesktop
 - ✅ **品牌化**：界面与元数据的 `OpenCode` 收敛为 `OC Desktop`，Logo/图标统一取父工程 `assets/` 物料
   （详见 `specs/103-branding/`）。
 - ✅ **鸿蒙 JS 工具（插件）**：把设备上不可得的能力用纯 JS 插件替代（详见 `specs/102-harmony-js-tools/`）。
+- ✅ **Git 操作（插件）**：把纯 JS 的 `isomorphic-git` 嵌入服务端进程，提供 21 个 `git_*` 工具、覆盖 VCS provider
+  （让自带 diff/分支界面可用）与「设置 → Git」凭据页（`~/.git-credentials`，`0600`）。详见 `specs/204-plugin-git/`
+  与 `docs/204-插件-GIT.md`。
 - ⬜ 能力缺口（v1 明确降级）：终端 PTY（平台级不可用）、`fff` FFI 内容搜索、LSP/formatter/MCP 外部进程、
-  插件在线安装（默认关闭）、git/VCS。详见规划 §7 与 `docs/鸿蒙环境能力清单-v2.0.26.md`。
+  插件在线安装（默认关闭）、git/VCS（已被 204 的插件方案覆盖，见上一条）。详见规划 §7 与 `docs/鸿蒙环境能力清单-v2.0.26.md`。
 
 ## 环境要求
 
