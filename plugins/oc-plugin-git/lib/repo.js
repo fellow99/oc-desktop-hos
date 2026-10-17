@@ -110,6 +110,27 @@ export async function currentBranch(repository) {
   }
 }
 
+/**
+ * 把「提交引用」解析成完整 oid：分支/标签名、完整 oid、**短 oid** 都接受。
+ *
+ * 为什么需要：isomorphic-git 的 `cherryPick` 只吃完整 oid（传分支名或短哈希会直接失败），
+ * 而原生 git 两种写法都支持 —— 真机实测模型就撞到了这个不一致。
+ * 解析不出来时原样返回，让底层抛出它自己的错误（不静默吞掉）。
+ */
+export async function resolveCommitish(repository, ref) {
+  const { git, fs, dir } = repository
+  try {
+    return await git.expandOid({ fs, dir, oid: ref })
+  } catch {
+    // 不是 oid 形态，继续按引用解析
+  }
+  try {
+    return await git.resolveRef({ fs, dir, ref })
+  } catch {
+    return ref
+  }
+}
+
 /** HEAD oid（无提交时 undefined） */
 export async function headOid(repository) {
   try {

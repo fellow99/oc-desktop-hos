@@ -1,4 +1,4 @@
-import { openExistingRepository, guarded, currentBranch, resolveIdentity } from "../repo.js"
+import { openExistingRepository, guarded, currentBranch, resolveCommitish, resolveIdentity } from "../repo.js"
 import { objectSchema, text } from "./shared.js"
 
 const MODES = ["soft", "mixed", "hard"]
@@ -52,7 +52,11 @@ export function createGitReset(workspace) {
         }
 
         if (mode === "hard") {
-          await repository.git.checkout({ fs: repository.fs, dir: repository.dir, ref: oid, force: true })
+          // 用分支名检出：传 commit oid 会让 isomorphic-git 把 HEAD 写成游离（真机表现：
+          // reset --hard 之后 git_status 变成 "On a detached HEAD"）。moveHead 已把分支指针挪到 oid，
+          // 所以检出分支等价于检出该提交，同时保持 HEAD 附着在分支上。
+          const branch = await currentBranch(repository)
+          await repository.git.checkout({ fs: repository.fs, dir: repository.dir, ref: branch ?? oid, force: true })
         }
 
         return text(
@@ -125,7 +129,9 @@ export function createGitMerge(workspace) {
           fastForwardOnly: Boolean(input?.fastForwardOnly),
           abortOnConflict: true,
         })
-        if (result?.fastForward) {
+        // 两条路径都要同步：快进只写 ref；非快进会写 merge commit + 更新索引，但工作树同样没被检出。
+        // 不补这一步，合并成功后工作区会与 HEAD 不一致（真机表现：git_status 报 `D <file>`）。
+        if (!result?.alreadyMerged) {
           const branch = await currentBranch(repository)
           await repository.git.checkout({
             fs: repository.fs,
@@ -163,10 +169,14 @@ export function createGitCherryPick(workspace) {
           await repository.git.abortMerge({ fs: repository.fs, dir: repository.dir })
           return text("Aborted the in-progress cherry-pick.", { dir: repository.dir })
         }
-        const oid = typeof input?.oid === "string" ? input.oid : ""
-        if (oid.length === 0) return text("git_cherry_pick: `oid` is required unless `abort` is set.")
+        const ref = typeof input?.oid === "string" ? input.oid : ""
+        if (ref.length === 0) return text("git_cherry_pick: `oid` is required unless `abort` is set.")
         const identity = await resolveIdentity(repository)
-        const result = await repository.git.cherryPick({
+        // 模型/用户可能给分支名或短哈希（原生 git 都接受），这里统一解析成完整 oid。
+        const oid = await resolveCommitish(repository, ref)
+        // 注意：isomorphic-git 的 cherryPick 直接返回 oid 字符串（不是 { oid }），
+        // 早先按 result.oid 读取，真机上明明建了提交却回显 "no new commit"。
+        const picked = await repository.git.cherryPick({
           fs: repository.fs,
           dir: repository.dir,
           oid,
@@ -174,9 +184,10 @@ export function createGitCherryPick(workspace) {
           // cherryPick 只接受 committer（author 沿用被摘提交的原作者），所以这里必须显式给身份。
           committer: identity,
         })
-        return text(`Cherry-picked ${oid.slice(0, 10)} → ${result?.oid ? result.oid.slice(0, 10) : "no new commit"}.`, {
+        const pickedOid = typeof picked === "string" && picked.length > 0 ? picked : undefined
+        return text(`Cherry-picked ${oid.slice(0, 10)} → ${pickedOid ? pickedOid.slice(0, 10) : "no new commit"}.`, {
           dir: repository.dir,
-          oid: result?.oid ?? null,
+          oid: pickedOid ?? null,
         })
       }),
   }

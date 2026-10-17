@@ -194,7 +194,11 @@ test("reset soft/hard 与 checkout 的语义（含破坏性操作）", async () 
   const hard = await tools.get("git_reset").execute({ mode: "hard", ref: first.metadata.oid })
   assert.match(hard.content, /working tree overwritten/u)
   assert.equal(nodeFs.readFileSync(path.join(workspace.root, "a.txt"), "utf8"), "v1\n")
-  assert.match((await tools.get("git_status").execute({})).content, /No changes\./u)
+  // 回归：reset --hard 必须保持 HEAD 附着在分支上（曾因按 oid 检出而变成 detached HEAD）
+  const afterHard = (await tools.get("git_status").execute({})).content
+  assert.doesNotMatch(afterHard, /detached/u)
+  assert.match(afterHard, /On branch main/u)
+  assert.match(afterHard, /No changes\./u)
 
   // 分支切换
   await tools.get("git_branch").execute({ action: "create", name: "dev", checkout: true })
@@ -236,6 +240,10 @@ test("merge 快进 + cherry-pick 组合，VCS provider 与工具读同一仓库"
   await tools.get("git_checkout").execute({ ref: "main" })
   const picked = await tools.get("git_cherry_pick").execute({ oid: extra.metadata.oid })
   assert.match(picked.content, /Cherry-picked/u)
+  // 回归：cherryPick 返回 oid 字符串，早先按 result.oid 读不到 → 明明建了提交却报 "no new commit"
+  assert.doesNotMatch(picked.content, /no new commit/u)
+  assert.match(picked.content, /→ [0-9a-f]{10}\./u)
+  assert.equal(typeof picked.metadata.oid, "string")
   assert.equal(nodeFs.existsSync(path.join(workspace.root, "extra.txt")), true)
 
   // VCS provider：与工具共享同一仓库视图
@@ -251,4 +259,61 @@ test("merge 快进 + cherry-pick 组合，VCS provider 与工具读同一仓库"
   assert.ok(status.some((entry) => entry.file === "dirty.txt" && entry.status === "added"))
   const working = await provider.diff({ ...scope, mode: "working", context: 3, maxOutputBytes: 1024 * 1024 })
   assert.ok(working.some((entry) => entry.file === "dirty.txt"))
+})
+
+test("merge 非快进（历史分叉）后索引与工作树必须与 HEAD 一致", async () => {
+  const workspace = makeWorkspace()
+  const tools = byName(workspace)
+  await tools.get("git_init").execute({})
+
+  nodeFs.writeFileSync(path.join(workspace.root, "base.txt"), "base\n")
+  await tools.get("git_add").execute({ files: ["base.txt"] })
+  await tools.get("git_commit").execute({ message: "base commit" })
+
+  // dev 分支提交 b.txt
+  await tools.get("git_branch").execute({ action: "create", name: "dev", checkout: true })
+  nodeFs.writeFileSync(path.join(workspace.root, "b.txt"), "dev\n")
+  await tools.get("git_add").execute({ files: ["b.txt"] })
+  await tools.get("git_commit").execute({ message: "dev commit" })
+
+  // main 上再提交一次，制造分叉（合并必然产生 merge commit）
+  await tools.get("git_checkout").execute({ ref: "main" })
+  nodeFs.writeFileSync(path.join(workspace.root, "a.txt"), "main\n")
+  await tools.get("git_add").execute({ files: ["a.txt"] })
+  await tools.get("git_commit").execute({ message: "main commit" })
+
+  const merged = await tools.get("git_merge").execute({ theirs: "dev" })
+  assert.match(merged.content, /merge commit/u)
+
+  // 关键不变量：合并后工作树与 HEAD 一致（回归：非快进路径曾只写索引/不检出工作区）
+  assert.equal(nodeFs.existsSync(path.join(workspace.root, "b.txt")), true, "b.txt 应被检出到工作区")
+  assert.equal(nodeFs.readFileSync(path.join(workspace.root, "b.txt"), "utf8"), "dev\n")
+  assert.match((await tools.get("git_status").execute({})).content, /No changes\./u)
+})
+
+test("cherry-pick / revert 接受分支名与短哈希（与原生 git 一致）", async () => {
+  const workspace = makeWorkspace()
+  const tools = byName(workspace)
+  await tools.get("git_init").execute({})
+
+  nodeFs.writeFileSync(path.join(workspace.root, "base.txt"), "base\n")
+  await tools.get("git_add").execute({ files: ["base.txt"] })
+  await tools.get("git_commit").execute({ message: "base commit" })
+
+  // 在 side 分支上提交一个文件，然后用**分支名**把它摘到 main
+  await tools.get("git_branch").execute({ action: "create", name: "side", checkout: true })
+  nodeFs.writeFileSync(path.join(workspace.root, "side.txt"), "side\n")
+  await tools.get("git_add").execute({ files: ["side.txt"] })
+  await tools.get("git_commit").execute({ message: "side commit" })
+  await tools.get("git_checkout").execute({ ref: "main" })
+
+  const picked = await tools.get("git_cherry_pick").execute({ oid: "side" })
+  assert.doesNotMatch(picked.content, /no new commit/u)
+  assert.equal(nodeFs.existsSync(path.join(workspace.root, "side.txt")), true)
+
+  // 短哈希形式的 revert 也要能解析
+  const short = picked.metadata.oid.slice(0, 8)
+  const reverted = await tools.get("git_revert").execute({ oid: short })
+  assert.match(reverted.content, /Revert|revert/u)
+  assert.equal(nodeFs.existsSync(path.join(workspace.root, "side.txt")), false)
 })

@@ -1,6 +1,6 @@
 import nodeFs from "node:fs"
 import path from "node:path"
-import { openExistingRepository, guarded, resolveIdentity, readTreeMap, diffTreeMaps } from "../repo.js"
+import { openExistingRepository, guarded, resolveCommitish, resolveIdentity, readTreeMap, diffTreeMaps } from "../repo.js"
 import { objectSchema, text } from "./shared.js"
 
 /**
@@ -28,7 +28,8 @@ export function createGitRevert(workspace) {
         const target = typeof input?.oid === "string" ? input.oid : ""
         if (target.length === 0) return text("git_revert: `oid` is required.")
 
-        const oid = await repository.git.resolveRef({ fs: repository.fs, dir: repository.dir, ref: target })
+        // 分支名 / 完整 oid / 短 oid 都接受（原生 git 的行为）
+        const oid = await resolveCommitish(repository, target)
         const commit = await repository.git.readCommit({ fs: repository.fs, dir: repository.dir, oid })
         const parents = commit.commit?.parent ?? []
         if (parents.length !== 1) {
