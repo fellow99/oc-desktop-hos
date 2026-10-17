@@ -11,8 +11,10 @@ const temporaryRoot = () => nodeFs.mkdtempSync(path.join(os.tmpdir(), "oc-git-fe
 test("fence.resolve 默认解析到会话目录", () => {
   const root = temporaryRoot()
   const fence = createFence({ root })
-  assert.equal(fence.resolve(undefined), path.resolve(root))
-  assert.equal(fence.resolve("sub"), path.resolve(root, "sub"))
+  // fence 在构造时取 realpath（软链防逃逸），因此与 realpath 后的根比较
+  const realRoot = nodeFs.realpathSync.native ? nodeFs.realpathSync.native(root) : nodeFs.realpathSync(root)
+  assert.equal(fence.resolve(undefined), realRoot)
+  assert.equal(fence.resolve("sub"), path.join(realRoot, "sub"))
 })
 
 test("fence.resolve 拒绝越界（.. / 绝对路径 / 根外）", () => {

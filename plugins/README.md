@@ -92,7 +92,7 @@ plugins/
 **纯 JS 第三方依赖例外（需求 204 起）**：允许插件在 `package.json` 的 `dependencies` 里声明**纯 JS** 第三方包
 （无 `.node`、无 `.so`、无 spawn、无平台二进制），由 `scripts/collect-app.mjs` 的 `collectPluginRuntime()`
 在构建期物化到**插件自己的** `node_modules/`（resfile 目的地，不入库、运行时仍不联网安装）。
-已登记：`oc-plugin-git` → `isomorphic-git@1.44.2` + `diff@9.0.0`（56 包 / 7.6 MB）。
+已登记：`oc-plugin-git` → `isomorphic-git@1.44.2` + `diff@9.0.0`（56 包 / 8,005,075 B ≈ 8.0 MB）。
 物化目录必须落在插件目录内：启动期 `materializePlugins()` 只整目录复制插件，裸包名解析也优先查它。
 
 另外两条现实约束：

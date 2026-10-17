@@ -27,6 +27,11 @@ export class CredentialRejectedError extends Error {
   }
 }
 
+/** 回显前的 URL 脱敏：去掉 userinfo，避免把 token/口令带进对话与元数据 */
+export function redactUrl(url) {
+  return String(url ?? "").replace(/\/\/[^@/]*@/u, "//")
+}
+
 /** 从 git 远端 URL 取出匹配所需的三元组 */
 export function parseRemoteTarget(url) {
   try {
@@ -76,7 +81,7 @@ export function createAuth(input) {
         log(`credential missing for ${target.protocol}://${target.host}`)
         return { cancel: true }
       }
-      log(`credential found for ${target.protocol}://${target.host} (username=${hit.username}, passwordLength=${hit.password.length})`)
+      log(`credential found for ${target.protocol}://${target.host} (passwordLength=${hit.password.length})`)
       return { username: hit.username, password: hit.password }
     },
     /** isomorphic-git 的 onAuthFailure 回调 */

@@ -56,7 +56,9 @@ export function renderFileDiff(input) {
 
   let truncated = false
   if (Buffer.byteLength(patch, "utf8") > MAX_FILE_DIFF_BYTES) {
-    patch = `${patch.slice(0, MAX_FILE_DIFF_BYTES)}\n[diff truncated: file exceeds ${MAX_FILE_DIFF_BYTES} bytes]\n`
+    // 按**字节**截断（按 UTF-16 码元切会让 CJK 文本远超上限）
+    const limited = Buffer.from(patch, "utf8").subarray(0, MAX_FILE_DIFF_BYTES).toString("utf8")
+    patch = `${limited}\n[diff truncated: file exceeds ${MAX_FILE_DIFF_BYTES} bytes]\n`
     truncated = true
   }
   return { patch, additions, deletions, binary: false, truncated }

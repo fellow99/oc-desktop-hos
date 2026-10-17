@@ -1,5 +1,6 @@
 import path from "node:path"
 import { openRepository, guarded, withRemoteAuth } from "../repo.js"
+import { redactUrl } from "../auth.js"
 import { objectSchema, text } from "./shared.js"
 
 function defaultTarget(url) {
@@ -57,8 +58,8 @@ export function createGitClone(workspace) {
         )
         const elapsed = Date.now() - started
         return text(
-          `Cloned ${url} into ${repository.dir} in ${elapsed} ms (${result ? "history complete" : "no new commits"}).`,
-          { dir: repository.dir, url, elapsedMs: elapsed },
+          `Cloned ${redactUrl(url)} into ${repository.dir} in ${elapsed} ms (${result ? "history complete" : "no new commits"}).`,
+          { dir: repository.dir, url: redactUrl(url), elapsedMs: elapsed },
         )
       }),
   }

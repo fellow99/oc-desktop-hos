@@ -41,6 +41,7 @@ import {
   log,
   parseArgs,
   readText,
+  rel,
   removeTree,
   require_,
   run,
@@ -65,6 +66,14 @@ const ISOMORPHIC_GIT_VERSION = "1.44.2"
 const JSDIFF_VERSION = "9.0.0"
 const GIT_RUNTIME_PACKAGES = 56
 const GIT_RUNTIME_MAX_BYTES = 12 * 1024 * 1024
+/** git 插件运行时依赖的复用缓存（.gitignore 已忽略 `/.cache/`）：避免每次 collect-app 都联网 npm install */
+const RUNTIME_CACHE_DIR = join(PROJECT_ROOT, ".cache", "git-plugin-runtime", "node_modules")
+
+/** 日志用相对路径 */
+function relativeToProject(p) {
+  return rel(PROJECT_ROOT, p)
+}
+
 /** 上架/平台禁用词（plugins/README.md §4） */
 /**
  * 上架禁用词：只约束**用户可见文案**（工具的 name / description 会出现在界面上），
@@ -375,7 +384,11 @@ function selfTest() {
  * **插件目录**，落在别处不会被带到设备；而插件加载走真实 ESM `import()`，裸包名解析优先查
  * 插件目录下的 `node_modules/`。两者叠起来，插件目录内嵌套是唯一「复制得走 + 解析得到」的位置。
  *
- * 断言失败即抛错（不静默产出空包）；`--force-plugin-runtime` 可强制重建。
+ * 幂等：`collectPlugins()` 会先 `removeTree(PLUGIN_DEST_DIR)` 清空投放目录，所以「目标目录已存在就跳过」
+ * 永远不成立。真正的复用点是工程内的 `.cache/git-plugin-runtime/`（已被 .gitignore 忽略）：
+ * 版本一致就直接复制过去，只有缓存缺失或版本不符才真的跑一次 npm install。
+ *
+ * 断言失败即抛错（不静默产出空包）；`--force-plugin-runtime` 强制重新安装并刷新缓存。
  */
 function collectPluginRuntime(plugins) {
   banner(3, "物化 git 插件运行时依赖（isomorphic-git + diff）")
@@ -384,15 +397,17 @@ function collectPluginRuntime(plugins) {
   const destination = join(PLUGIN_DEST_DIR, GIT_PLUGIN_NAME, "node_modules")
   const force = args.has("force-plugin-runtime")
 
-  if (!force && isFile(join(destination, "isomorphic-git", "package.json")) && isFile(join(destination, "diff", "package.json"))) {
-    const gitVersion = JSON.parse(readText(join(destination, "isomorphic-git", "package.json"))).version
-    const diffVersion = JSON.parse(readText(join(destination, "diff", "package.json"))).version
-    if (gitVersion === ISOMORPHIC_GIT_VERSION && diffVersion === JSDIFF_VERSION) {
-      assertGitRuntime(destination)
-      log(3, `已存在且版本一致（isomorphic-git@${gitVersion} / diff@${diffVersion}），跳过物化`)
-      return
-    }
-    log(3, `版本不一致（实际 isomorphic-git@${gitVersion} / diff@${diffVersion}），重新物化`)
+  if (!force && runtimeVersionMatches(destination)) {
+    assertGitRuntime(destination)
+    log(3, "目标目录已有版本一致的运行时（未清理场景），跳过物化")
+    return
+  }
+  if (!force && runtimeVersionMatches(RUNTIME_CACHE_DIR)) {
+    removeTree(destination)
+    copyTree(RUNTIME_CACHE_DIR, destination)
+    assertGitRuntime(destination)
+    log(3, `复用缓存 ${relativeToProject(RUNTIME_CACHE_DIR)}（版本一致），未执行 npm install`)
+    return
   }
 
   const staging = mkdtempSync(join(tmpdir(), "oc-git-runtime-"))
@@ -416,6 +431,24 @@ function collectPluginRuntime(plugins) {
     removeTree(staging)
   }
   assertGitRuntime(destination)
+
+  // 回写缓存：下一次 collect-app 直接复制，不再联网安装。
+  removeTree(RUNTIME_CACHE_DIR)
+  copyTree(destination, RUNTIME_CACHE_DIR)
+  assertGitRuntime(RUNTIME_CACHE_DIR)
+  log(3, `已刷新缓存 ${relativeToProject(RUNTIME_CACHE_DIR)}`)
+}
+
+/** node_modules 里的两个直接依赖版本是否与脚本常量一致 */
+function runtimeVersionMatches(nodeModules) {
+  const gitManifest = join(nodeModules, "isomorphic-git", "package.json")
+  const diffManifest = join(nodeModules, "diff", "package.json")
+  if (!isFile(gitManifest) || !isFile(diffManifest)) return false
+  const gitVersion = JSON.parse(readText(gitManifest)).version
+  const diffVersion = JSON.parse(readText(diffManifest)).version
+  const matches = gitVersion === ISOMORPHIC_GIT_VERSION && diffVersion === JSDIFF_VERSION
+  if (!matches) log(3, `${relativeToProject(nodeModules)} 版本不符（isomorphic-git@${gitVersion} / diff@${diffVersion}）`)
+  return matches
 }
 
 /** 产物断言：版本、入口、包数、体积、无原生模块 */
@@ -449,7 +482,7 @@ function assertGitRuntime(nodeModules) {
 
   log(
     3,
-    `git 运行时断言通过：isomorphic-git@${gitVersion} + diff@${diffVersion}，${packages} 包 / ${(bytes / 1024 / 1024).toFixed(1)} MB`,
+    `git 运行时断言通过：isomorphic-git@${gitVersion} + diff@${diffVersion}，${packages} 包 / ${bytes} B（${(bytes / 1e6).toFixed(2)} MB）`,
   )
 }
 

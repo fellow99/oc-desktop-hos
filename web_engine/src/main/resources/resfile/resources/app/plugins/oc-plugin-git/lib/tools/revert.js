@@ -44,7 +44,10 @@ export function createGitRevert(workspace) {
         const changed = diffTreeMaps(parentTree, targetTree)
         if (changed.length === 0) return text(`git_revert: ${oid.slice(0, 10)} changes no paths.`)
 
-        // fail-closed：工作区必须与目标提交一致
+        // fail-closed：工作区与**索引**都必须与目标提交一致（暂存的改动同样不能被静默覆盖）
+        const matrix = await repository.git.statusMatrix({ fs: repository.fs, dir: repository.dir })
+        const staged = new Map()
+        for (const [file, head, workdir, stage] of matrix) staged.set(file, { head, workdir, stage })
         const conflicts = []
         for (const entry of changed) {
           const file = entry.slice(2)
@@ -65,7 +68,13 @@ export function createGitRevert(workspace) {
             continue
           }
           const hash = await repository.git.hashBlob({ object: actual })
-          if (hash.oid !== expected) conflicts.push(file)
+          if (hash.oid !== expected) {
+            conflicts.push(file)
+            continue
+          }
+          // 索引里与该路径不同（有暂存改动）也算冲突：物化父提交会覆盖掉它
+          const row = staged.get(file)
+          if (row && row.head === 1 && row.stage !== 1) conflicts.push(`${file} (staged)`)
         }
         if (conflicts.length > 0) {
           return text(

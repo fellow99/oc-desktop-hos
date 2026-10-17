@@ -165,7 +165,7 @@ discoverPlugins() → assertPluginTree/Source（源目录） → assertToolMetad
   → collectPluginRuntime()（新增：npm 物化 → 同目录 node_modules/ → 断言）
 ```
 
-`collectPluginRuntime()` 要点：常量 pin、临时 staging、`cpSync` 到目的地、断言（版本 / `http/node` 入口 / 包数 56 / 体积 ≤ 12 MB / 无 `.node`·`.so`）、幂等快路径、`--force-plugin-runtime`、`--check-only` 跳过、失败抛错（不 `process.exit`）。
+`collectPluginRuntime()` 要点：常量 pin、临时 staging、`cpSync` 到目的地、断言（版本 / `http/node` 入口 / 包数 56 / 体积 ≤ 12 MB / 无 `.node`·`.so`）。**幂等靠工程内缓存 `.cache/git-plugin-runtime/`**（`collectPlugins()` 会先 `removeTree(PLUGIN_DEST_DIR)`，目标目录级快路径永远不可达）：版本命中即复制、否则 `npm install` 后回写缓存；另有 `--force-plugin-runtime` 强制重装、`--check-only` 跳过、失败抛错（不 `process.exit`）。
 
 ### 5.5 错误处理与降级矩阵
 

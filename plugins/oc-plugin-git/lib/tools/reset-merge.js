@@ -12,6 +12,13 @@ async function moveHead(repository, oid) {
   }
 }
 
+/** 工作区/索引是否有未提交改动（未跟踪的新文件不算）。 */
+async function hasLocalChanges(repository) {
+  const { git, fs, dir } = repository
+  const matrix = await git.statusMatrix({ fs, dir })
+  return matrix.some(([, head, workdir, stage]) => stage !== head || (head !== 0 && workdir !== 1))
+}
+
 export function createGitReset(workspace) {
   return {
     name: "git_reset",
@@ -84,6 +91,31 @@ export function createGitMerge(workspace) {
         const theirs = typeof input?.theirs === "string" ? input.theirs : ""
         if (theirs.length === 0) return text("git_merge: `theirs` is required unless `abort` is set.")
         const identity = await resolveIdentity(repository)
+        // isomorphic-git 的 merge() 在快进分支上只写 ref，不动索引与工作树（与原生 git 不同）。
+        // 所以这里先拦下有本地改动的合并，再在快进后显式检出，保证索引/工作树与 HEAD 一致。
+        if (input?.dryRun) {
+          const preview = await repository.git.merge({
+            fs: repository.fs,
+            dir: repository.dir,
+            theirs,
+            author: identity,
+            fastForward: input?.noFastForward ? false : true,
+            fastForwardOnly: Boolean(input?.fastForwardOnly),
+            dryRun: true,
+            abortOnConflict: true,
+          })
+          return text(`Merge of ${theirs} would succeed (dry run, nothing changed).`, {
+            dir: repository.dir,
+            dryRun: true,
+            oid: preview?.oid ?? null,
+          })
+        }
+        if (await hasLocalChanges(repository)) {
+          return text(
+            `git_merge: the working tree has uncommitted changes; commit or stash them before merging ${theirs}.`,
+            { dir: repository.dir },
+          )
+        }
         const result = await repository.git.merge({
           fs: repository.fs,
           dir: repository.dir,
@@ -91,11 +123,16 @@ export function createGitMerge(workspace) {
           author: identity,
           fastForward: input?.noFastForward ? false : true,
           fastForwardOnly: Boolean(input?.fastForwardOnly),
-          dryRun: Boolean(input?.dryRun),
           abortOnConflict: true,
         })
-        if (input?.dryRun) {
-          return text(`Merge of ${theirs} would succeed (dry run, nothing changed).`, { dir: repository.dir, dryRun: true })
+        if (result?.fastForward) {
+          const branch = await currentBranch(repository)
+          await repository.git.checkout({
+            fs: repository.fs,
+            dir: repository.dir,
+            ref: branch ?? result.oid,
+            force: true,
+          })
         }
         return text(
           result && result.oid
@@ -134,7 +171,8 @@ export function createGitCherryPick(workspace) {
           dir: repository.dir,
           oid,
           abortOnConflict: true,
-          author: identity,
+          // cherryPick 只接受 committer（author 沿用被摘提交的原作者），所以这里必须显式给身份。
+          committer: identity,
         })
         return text(`Cherry-picked ${oid.slice(0, 10)} → ${result?.oid ? result.oid.slice(0, 10) : "no new commit"}.`, {
           dir: repository.dir,

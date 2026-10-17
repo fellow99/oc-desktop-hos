@@ -49,8 +49,10 @@ RPC（`POST /api/rpc/oc-harmony-git/<method>`，handler 全部 async）：
 
 ## 5. 依赖（构建期物化）
 
-`isomorphic-git@1.44.2` + `diff@9.0.0`（共 56 包 / ≈9.3 MB）由 `scripts/collect-app.mjs` 的
+`isomorphic-git@1.44.2` + `diff@9.0.0`（共 56 包 / 8,005,075 B ≈ 8.0 MB）由 `scripts/collect-app.mjs` 的
 `collectPluginRuntime()` 物化到**插件自己的** `node_modules/`（resfile 目的地，不入库）。
+物化结果会同时回写到工程内 `.cache/git-plugin-runtime/`（已 `.gitignore`），后续 `collect-app` 直接复制缓存、
+不再联网 `npm install`；版本不符或 `--force-plugin-runtime` 才重新安装。
 运行时**不安装任何依赖**（`plugins/README.md` §2 的 `L1 仅本地`）。
 
 第三方模块一律**懒加载**（首次工具调用才 `import()`）：构建期的「导入式工具元数据检查」会跑
@@ -59,7 +61,7 @@ RPC（`POST /api/rpc/oc-harmony-git/<method>`，handler 全部 async）：
 ## 6. Known Limitations
 
 - **`rebase` 不交付**：上游库没有该原语，被请求时明确说明，不用 merge 冒充。
-- **SSH 不可用**：只有 HTTPS 用户名/口令；`git@host:path` 会被改写成 `https://host/path`（丢用户名）。
+- **SSH 不可用**：只有 HTTPS 用户名/口令；`git@host:path` / `ssh://` 会被库改写为 `https://host/path`，丢掉的是 scp 里的 SSH 账号名，HTTPS 用户名得靠凭据文件或 `username` 参数。
 - **仅 SHA-1 仓库**；二进制文件只报 `Binary files … differ`。
 - **纯 JS 性能**：大仓库 clone 明显慢于原生 git，用 `depth` / `singleBranch` / `noTags` 缓解。
 - **软链不支持**：设备 `symlink` 不可用，适配器对 `symlink` / `readlink` 明确报错。

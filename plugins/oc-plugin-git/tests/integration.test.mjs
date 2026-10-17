@@ -10,6 +10,7 @@ import test from "node:test"
 import { createFence } from "../lib/fence.js"
 import { createAuth } from "../lib/auth.js"
 import { buildTools, TOOL_NAMES } from "../lib/tools/index.js"
+import { createVcsProvider } from "../lib/vcs.js"
 
 function makeWorkspace() {
   const root = nodeFs.mkdtempSync(path.join(os.tmpdir(), "oc-git-it-"))
@@ -168,4 +169,86 @@ test("rebase 不会被冒充：工具面里没有该工具，且没有别的工�
   assert.equal(names.includes("git_rebase"), false)
   const branch = buildTools(makeWorkspace()).find((tool) => tool.name === "git_branch")
   assert.deepEqual(branch.input.properties.action.enum, ["list", "create", "delete", "rename"])
+})
+
+test("reset soft/hard 与 checkout 的语义（含破坏性操作）", async () => {
+  const workspace = makeWorkspace()
+  const tools = byName(workspace)
+  await tools.get("git_init").execute({})
+
+  nodeFs.writeFileSync(path.join(workspace.root, "a.txt"), "v1\n")
+  await tools.get("git_add").execute({ files: ["a.txt"] })
+  const first = await tools.get("git_commit").execute({ message: "first" })
+
+  nodeFs.writeFileSync(path.join(workspace.root, "a.txt"), "v2\n")
+  await tools.get("git_add").execute({ files: ["a.txt"] })
+  await tools.get("git_commit").execute({ message: "second" })
+
+  // soft：只移动指针，工作区/索引不动 ⇒ 出现「已暂存的改动」
+  const soft = await tools.get("git_reset").execute({ mode: "soft", ref: first.metadata.oid })
+  assert.match(soft.content, /Reset \(soft\)/u)
+  assert.equal(nodeFs.readFileSync(path.join(workspace.root, "a.txt"), "utf8"), "v2\n")
+  assert.match((await tools.get("git_status").execute({})).content, /Staged for commit/u)
+
+  // hard：工作区被重写回目标提交
+  const hard = await tools.get("git_reset").execute({ mode: "hard", ref: first.metadata.oid })
+  assert.match(hard.content, /working tree overwritten/u)
+  assert.equal(nodeFs.readFileSync(path.join(workspace.root, "a.txt"), "utf8"), "v1\n")
+  assert.match((await tools.get("git_status").execute({})).content, /No changes\./u)
+
+  // 分支切换
+  await tools.get("git_branch").execute({ action: "create", name: "dev", checkout: true })
+  nodeFs.writeFileSync(path.join(workspace.root, "b.txt"), "dev\n")
+  await tools.get("git_add").execute({ files: ["b.txt"] })
+  await tools.get("git_commit").execute({ message: "dev commit" })
+  assert.equal(nodeFs.existsSync(path.join(workspace.root, "b.txt")), true)
+
+  await tools.get("git_checkout").execute({ ref: "main" })
+  assert.equal(nodeFs.existsSync(path.join(workspace.root, "b.txt")), false)
+  assert.match((await tools.get("git_branch").execute({ action: "list" })).content, /\* main/u)
+})
+
+test("merge 快进 + cherry-pick 组合，VCS provider 与工具读同一仓库", async () => {
+  const workspace = makeWorkspace()
+  const tools = byName(workspace)
+  await tools.get("git_init").execute({})
+
+  nodeFs.writeFileSync(path.join(workspace.root, "base.txt"), "base\n")
+  await tools.get("git_add").execute({ files: ["base.txt"] })
+  await tools.get("git_commit").execute({ message: "base commit" })
+
+  await tools.get("git_branch").execute({ action: "create", name: "feature" })
+  await tools.get("git_checkout").execute({ ref: "feature" })
+  nodeFs.writeFileSync(path.join(workspace.root, "feature.txt"), "feature\n")
+  await tools.get("git_add").execute({ files: ["feature.txt"] })
+  await tools.get("git_commit").execute({ message: "feature commit" })
+
+  await tools.get("git_checkout").execute({ ref: "main" })
+  const merged = await tools.get("git_merge").execute({ theirs: "feature" })
+  assert.match(merged.content, /Merged feature/u)
+  assert.equal(nodeFs.existsSync(path.join(workspace.root, "feature.txt")), true)
+
+  // cherry-pick 一个独立提交（在 feature 上再提交，然后摘到 main）
+  await tools.get("git_checkout").execute({ ref: "feature" })
+  nodeFs.writeFileSync(path.join(workspace.root, "extra.txt"), "extra\n")
+  await tools.get("git_add").execute({ files: ["extra.txt"] })
+  const extra = await tools.get("git_commit").execute({ message: "extra commit" })
+  await tools.get("git_checkout").execute({ ref: "main" })
+  const picked = await tools.get("git_cherry_pick").execute({ oid: extra.metadata.oid })
+  assert.match(picked.content, /Cherry-picked/u)
+  assert.equal(nodeFs.existsSync(path.join(workspace.root, "extra.txt")), true)
+
+  // VCS provider：与工具共享同一仓库视图
+  const provider = createVcsProvider(workspace)
+  const scope = { directory: workspace.root, worktree: workspace.root, canonical: workspace.root }
+  const info = await provider.info(scope)
+  assert.equal(info.branch.current, "main")
+  assert.equal(typeof info.branch.default, "string")
+  const branches = await provider.branches({ ...scope, search: "", limit: 10 })
+  assert.ok(branches.includes("main"))
+  nodeFs.writeFileSync(path.join(workspace.root, "dirty.txt"), "dirty\n")
+  const status = await provider.status(scope)
+  assert.ok(status.some((entry) => entry.file === "dirty.txt" && entry.status === "added"))
+  const working = await provider.diff({ ...scope, mode: "working", context: 3, maxOutputBytes: 1024 * 1024 })
+  assert.ok(working.some((entry) => entry.file === "dirty.txt"))
 })

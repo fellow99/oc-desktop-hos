@@ -48,7 +48,13 @@ export function createGitStash(workspace) {
           const note = identity.applied
             ? ` (repository had no user.name/user.email; wrote the placeholder ${identity.identity.name} <${identity.identity.email}> — change it with git_config)`
             : ""
-          return text(`Stashed the current changes${result ? ` (${String(result).slice(0, 10)})` : ""}.${note}`, {
+          if (!result) {
+            return text(`Nothing to stash (the working tree has no changes).${note}`, {
+              dir: repository.dir,
+              identityApplied: identity.applied,
+            })
+          }
+          return text(`Stashed the current changes (${String(result).slice(0, 10)}).${note}`, {
             dir: repository.dir,
             identityApplied: identity.applied,
           })

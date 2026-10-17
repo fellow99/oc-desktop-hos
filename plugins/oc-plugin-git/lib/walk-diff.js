@@ -12,6 +12,13 @@ export function matchesPath(file, paths) {
   return paths.some((path) => file === path || file.startsWith(`${path.replace(/\/+$/u, "")}/`))
 }
 
+/**
+ * 工作区 walker 不会自动排除 gitdir（`.git` 目录/文件自身），
+ * 若不过滤，`git_diff` 与 VCS 面板会把 `.git/objects/**` 当成「未跟踪的新增文件」吐出去。
+ */
+function isGitdirEntry(file) {
+  return file === ".git" || file.startsWith(".git/")
+}
 async function entryContent(repository, entry) {
   if (!entry) return undefined
   const type = await entry.type()
@@ -53,6 +60,11 @@ export async function walkDiff(repository, options) {
     leftWalker = head ? git.TREE({ ref: head }) : undefined
     rightWalker = git.WORKDIR()
     label = "HEAD ↔ working tree"
+  } else if (mode === "treeWorkdir") {
+    const oid = await git.resolveRef({ fs: repository.fs, dir: repository.dir, ref: options.ref })
+    leftWalker = git.TREE({ ref: oid })
+    rightWalker = git.WORKDIR()
+    label = `${options.ref} ↔ working tree`
   } else if (mode === "refs") {
     const leftOid = await git.resolveRef({ fs: repository.fs, dir: repository.dir, ref: options.ref })
     const rightOid = await git.resolveRef({ fs: repository.fs, dir: repository.dir, ref: options.ref2 })
@@ -69,7 +81,7 @@ export async function walkDiff(repository, options) {
     dir: repository.dir,
     trees: leftWalker ? [leftWalker, rightWalker] : [rightWalker],
     map: async (filepath, walked) => {
-      if (filepath === ".") return undefined
+      if (filepath === "." || isGitdirEntry(filepath)) return undefined
       const left = leftWalker ? walked[0] : undefined
       const right = leftWalker ? walked[1] : walked[0]
       const leftType = left ? await left.type() : undefined

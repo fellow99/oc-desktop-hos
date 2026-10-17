@@ -6,7 +6,11 @@
  *
  * 本壳**没有**审批/提权面（与 dsh 的一次性提权不同），所以越界只能拒绝并说明：不重试、不换根、
  * 不静默把路径改到别处。
+ *
+ * 软链：根与会话目录在构造时取 `realpath`，`resolve()` 对已存在的目标再取一次 `realpath` 复核，
+ * 因此「根内软链指向根外」不会被跟随。
  */
+import nodeFs from "node:fs"
 import path from "node:path"
 
 export class FenceError extends Error {
@@ -26,13 +30,21 @@ export function contains(root, target) {
   return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel))
 }
 
+function realpathIfExists(target) {
+  try {
+    return nodeFs.realpathSync.native ? nodeFs.realpathSync.native(target) : nodeFs.realpathSync(target)
+  } catch {
+    return target
+  }
+}
+
 /**
  * @param {{root: string, cwd?: string}} input
  */
 export function createFence(input) {
-  const root = typeof input?.root === "string" && input.root.length > 0 ? path.resolve(input.root) : ""
+  const root = typeof input?.root === "string" && input.root.length > 0 ? realpathIfExists(path.resolve(input.root)) : ""
   if (!root) throw new FenceError("git plugin: workspace root is unknown (context.location.project.directory)", "NO_ROOT")
-  const cwd = path.resolve(input.cwd && input.cwd.length > 0 ? input.cwd : root)
+  const cwd = realpathIfExists(path.resolve(input.cwd && input.cwd.length > 0 ? input.cwd : root))
 
   return {
     root,
@@ -51,6 +63,11 @@ export function createFence(input) {
             `Open the target directory as a workspace instead of pointing outside it.`,
           "OUT_OF_ROOT",
         )
+      }
+      // 软链防逃逸：已存在的路径取 realpath 再复核（不存在的路径只做词法校验，例如 clone 目标）
+      const real = realpathIfExists(target)
+      if (!contains(root, real)) {
+        throw new FenceError(`git plugin: \`dir\` resolves outside the workspace root (${root}): ${raw}`, "OUT_OF_ROOT")
       }
       return target
     },

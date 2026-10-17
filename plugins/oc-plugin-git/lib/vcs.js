@@ -11,7 +11,7 @@
 import { createFence } from "./fence.js"
 import { openRepository, currentBranch, headOid } from "./repo.js"
 import { walkDiff } from "./walk-diff.js"
-import { renderFileDiff } from "./diff.js"
+import { MAX_TOTAL_DIFF_BYTES, renderFileDiff } from "./diff.js"
 
 export const VCS_PROVIDER_ID = "git"
 const MAX_STATUS_FILES = 500
@@ -129,24 +129,59 @@ export function createVcsProvider(workspace) {
         const repository = await openFromScope(workspace, input)
         const mode = input?.mode ?? "working"
         const base = typeof input?.base === "string" && input.base.length > 0 ? input.base : undefined
+        const context = Number.isInteger(input?.context) ? input.context : undefined
 
         if (mode === "committed" && !base) return []
 
-        const collected =
-          base && (mode === "branch" || mode === "committed")
-            ? await walkDiff(repository, { mode: "refs", ref: base, ref2: "HEAD" })
-            : await walkDiff(repository, { mode: "head" })
+        // 与上游同语义：以 merge-base 为基线。`branch` 比到**工作区**（含未提交改动），
+        // `committed` 只比到 HEAD —— 直接用两点 diff 会漏掉工作区改动、并把基线自身的提交算成反向变更。
+        let collected
+        if (base && (mode === "branch" || mode === "committed")) {
+          const head = await headOid(repository)
+          const baseOid = await repository.git.resolveRef({ fs: repository.fs, dir: repository.dir, ref: base })
+          let mergeBase = baseOid
+          if (head) {
+            const bases = await repository.git.findMergeBase({ fs: repository.fs, dir: repository.dir, oids: [baseOid, head] })
+            if (bases && bases.length > 0) mergeBase = bases[0]
+          }
+          collected =
+            mode === "branch"
+              ? await walkDiff(repository, { mode: "treeWorkdir", ref: mergeBase })
+              : await walkDiff(repository, { mode: "refs", ref: mergeBase, ref2: head ?? mergeBase })
+        } else {
+          collected = await walkDiff(repository, { mode: "head" })
+        }
 
-        return collected.entries.map((entry) => {
-          const rendered = renderFileDiff({ diff: repository.diff, file: entry.file, before: entry.before, after: entry.after })
-          return {
+        // 总量预算（上游同样按字节封顶）：超出后不再追加文件，避免把整仓 diff 塞给界面
+        let budget = MAX_TOTAL_DIFF_BYTES
+        const files = []
+        for (const entry of collected.entries) {
+          let rendered
+          try {
+            rendered = renderFileDiff({
+              diff: repository.diff,
+              file: entry.file,
+              before: entry.before,
+              after: entry.after,
+              ...(context === undefined ? {} : { context }),
+            })
+          } catch (error) {
+            // 单个文件渲染失败不该让整个 diff 变空：打一行归因日志后跳过该文件。
+            fail("diff")(error)
+            continue
+          }
+          const bytes = Buffer.byteLength(rendered.patch, "utf8")
+          if (bytes > budget) break
+          budget -= bytes
+          files.push({
             file: entry.file,
             patch: rendered.patch,
             additions: rendered.additions,
             deletions: rendered.deletions,
             status: entry.status,
-          }
-        })
+          })
+        }
+        return files
       } catch (error) {
         fail("diff")(error)
         return []

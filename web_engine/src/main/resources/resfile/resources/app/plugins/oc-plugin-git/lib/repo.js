@@ -53,6 +53,15 @@ export async function openExistingRepository(workspace, dir) {
       "NOT_A_REPOSITORY",
     )
   }
+  // 安全属性：仓库根必须落在用户授予的工作区内。工作区是某个父仓库的子目录时，
+  // 绝不能把 chroot 抬到那个父仓库（否则写入会跑到工作区之外）。
+  if (!workspace.fence.contains(root)) {
+    throw new FenceError(
+      `not a git repository inside the workspace root (${workspace.fence.root}): ${repository.dir}. ` +
+        `Open the repository root itself as the workspace instead of a parent repository's subdirectory.`,
+      "NOT_A_REPOSITORY",
+    )
+  }
   if (root !== repository.dir) {
     // 子目录 → 以仓库根为准（与 git 的行为一致）
     repository.dir = root

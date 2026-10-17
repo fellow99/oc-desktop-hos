@@ -161,7 +161,10 @@ export default {
   id: PLUGIN_ID,
   async setup(context) {
     const location = context?.location ?? {}
-    const root = location.project?.directory ?? location.directory
+    const root = location.project?.directory
+    if (typeof root !== "string" || root.length === 0) {
+      throw new Error(`${PLUGIN_ID}: context.location.project.directory is required (fence root)`)
+    }
     const cwd = location.directory ?? root
     const log = (message) => console.log(`${LOG_PREFIX} ${message}`)
     const credentialsFile = gitCredentialsPath()
