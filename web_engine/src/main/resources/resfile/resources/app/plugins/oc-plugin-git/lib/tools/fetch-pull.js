@@ -1,4 +1,4 @@
-import { openExistingRepository, guarded, withRemoteAuth } from "../repo.js"
+import { openExistingRepository, guarded, currentBranch, resolveIdentity, withRemoteAuth } from "../repo.js"
 import { objectSchema, text } from "./shared.js"
 
 export function createGitFetch(workspace) {
@@ -74,12 +74,17 @@ export function createGitPull(workspace) {
         const target = (remotes ?? []).find((entry) => entry.remote === remote)
         if (!target) return text(`git_pull: remote "${remote}" is not configured. Use git_remote to add it first.`)
         const started = Date.now()
+        // isomorphic-git 的 pull 内部走 merge，即使只是快进也要 author/committer：
+        // 不传就在「本来无事可做」的仓库上抛 MissingNameError（真机实测）。
+        const identity = await resolveIdentity(repository)
         const result = await withRemoteAuth(workspace, target.url, () =>
           repository.git.pull({
             fs: repository.fs,
             http: repository.http,
             dir: repository.dir,
             remote,
+            author: identity,
+            committer: identity,
             onAuth: repository.auth.onAuth,
             onAuthFailure: repository.auth.onAuthFailure,
             ...(input?.ref ? { ref: input.ref } : {}),
@@ -87,6 +92,11 @@ export function createGitPull(workspace) {
           }),
         )
         const elapsed = Date.now() - started
+        // 与 merge 同源问题：pull 成功后索引/工作树不会自动跟随 HEAD，这里补一次检出。
+        if (result?.oid && !result.alreadyMerged) {
+          const branch = await currentBranch(repository)
+          await repository.git.checkout({ fs: repository.fs, dir: repository.dir, ref: branch ?? result.oid, force: true })
+        }
         if (!result || !result.oid) return text(`Already up to date (${elapsed} ms).`, { dir: repository.dir, elapsedMs: elapsed })
         return text(
           `Pulled from ${remote} in ${elapsed} ms → ${result.oid.slice(0, 10)}` +

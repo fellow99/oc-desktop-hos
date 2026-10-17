@@ -317,3 +317,30 @@ test("cherry-pick / revert 接受分支名与短哈希（与原生 git 一致）
   assert.match(reverted.content, /Revert|revert/u)
   assert.equal(nodeFs.existsSync(path.join(workspace.root, "side.txt")), false)
 })
+
+test("git_branch remote: true 列出远端跟踪分支（不再返回空）", async () => {
+  const workspace = makeWorkspace()
+  const tools = byName(workspace)
+  await tools.get("git_init").execute({})
+  nodeFs.writeFileSync(path.join(workspace.root, "a.txt"), "a\n")
+  await tools.get("git_add").execute({ files: ["a.txt"] })
+  await tools.get("git_commit").execute({ message: "a" })
+
+  // 造两条 remote-tracking ref（不联网也能覆盖这条路）
+  const head = nodeFs.readFileSync(path.join(workspace.root, ".git", "refs", "heads", "main"), "utf8")
+  const remoteDir = path.join(workspace.root, ".git", "refs", "remotes", "origin")
+  nodeFs.mkdirSync(remoteDir, { recursive: true })
+  nodeFs.writeFileSync(path.join(remoteDir, "main"), head)
+  nodeFs.writeFileSync(path.join(remoteDir, "feature-x"), head)
+
+  const remote = await tools.get("git_branch").execute({ action: "list", remote: true })
+  assert.match(remote.content, /feature-x/u)
+  assert.match(remote.content, /main/u)
+  // 远端列表不打「当前分支」标记
+  assert.doesNotMatch(remote.content, /\* main/u)
+  assert.equal(remote.metadata.count >= 2, true)
+
+  // 只给名字也行
+  const named = await tools.get("git_branch").execute({ action: "list", remote: "origin" })
+  assert.match(named.content, /feature-x/u)
+})

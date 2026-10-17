@@ -19,7 +19,12 @@ export function createGitBranch(workspace) {
         name: { type: "string", description: "Branch name (required for create/delete/rename)." },
         newName: { type: "string", description: "New name for rename." },
         checkout: { type: "boolean", description: "Switch to the branch right after creating it (default: false)." },
-        remote: { type: "boolean", description: "List remote-tracking branches instead of local ones (default: false)." },
+        remote: {
+          type: ["boolean", "string"],
+          description:
+            'List remote-tracking branches instead of local ones. `true` means the default remote ("origin"); ' +
+            'a string names a specific remote.',
+        },
       },
       additionalProperties: false,
     },
@@ -29,13 +34,21 @@ export function createGitBranch(workspace) {
         const repository = await openExistingRepository(workspace, input?.dir)
         const action = input?.action ?? "list"
         if (action === "list") {
+          // isomorphic-git 的 listBranches 要的是**远端名**，不是布尔值：
+          // 早先直接把 `true` 传下去，真机上 `.git/refs/remotes/origin/*` 明明有分支却返回空列表。
+          let remoteName
+          if (typeof input?.remote === "string" && input.remote.length > 0) remoteName = input.remote
+          else if (input?.remote === true) remoteName = "origin"
           const branches = await repository.git.listBranches({
             fs: repository.fs,
             dir: repository.dir,
-            ...(input?.remote ? { remote: input.remote } : {}),
+            ...(remoteName ? { remote: remoteName } : {}),
           })
           const current = await currentBranch(repository)
-          const lines = branches.map((branch) => (branch === current ? `* ${branch}` : `  ${branch}`))
+          // 列远端分支时不打当前分支标记：同名并不代表「本地就在该远端分支上」
+          const lines = branches.map((branch) =>
+            !remoteName && branch === current ? `* ${branch}` : `  ${branch}`,
+          )
           return text(lines.length > 0 ? lines.join("\n") : "No branches yet.", {
             dir: repository.dir,
             count: branches.length,
