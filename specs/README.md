@@ -28,6 +28,7 @@
 | 201 | `plugin-runtime` | 插件机制与三档降级（L0 关闭 / L1 仅本地 / L2 允许安装）、物化路径与校验 | 003、005 |
 | 202 | `skill-runtime-capabilities` | 壳专用技能与设备能力清单（`skills/` 树投放与能力口径） | 005 |
 | 203 | `plugin-workspace-picker` | 选择工作区目录：四主目录（沙箱/桌面/文档/下载）切换、逐级浏览、新建文件夹与采纳；能力走壳专用插件 RPC（`context.rpc.register`，零 codegen），UI 走最小上游补丁且自门控 | 201、011、006 |
+| 204 | `plugin-git` | Git 操作：把纯 JS 的 `isomorphic-git` 嵌入应用，提供 21 个 `git_*` 工具（仓库根 chroot 围栏）、覆盖内置 VCS provider（`id:"git"`，让自带 diff/分支界面可用），以及经插件 RPC + 最小上游补丁的「设置 → Git」凭据页（`~/.git-credentials`，`0600`） | 201、102、203、006 |
 
 补充说明：
 
