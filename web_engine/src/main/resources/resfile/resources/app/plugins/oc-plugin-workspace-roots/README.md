@@ -1,6 +1,6 @@
 # oc-plugin-workspace-roots
 
-OC Desktop（HarmonyOS）专用 opencode 插件：为「选择工作区目录 / 打开项目」对话框提供**四个主目录**
+OC Desktop（**Electron on HarmonyOS Edition**）专用 opencode 插件：为「选择工作区目录 / 打开项目」对话框提供**四个主目录**
 （沙箱 / 桌面 / 文档 / 下载）的壳侧能力 —— 路径解析、主目录内建目录、目录权限桥与应用信息页深链。
 
 对应规格：`specs/203-plugin-workspace-picker/`；设计：`docs/203-插件-选择工作区目录.md`；

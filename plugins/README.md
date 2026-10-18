@@ -1,6 +1,6 @@
 # plugins/ —— 壳专用 opencode 插件源码（Phase 2）
 
-本目录存放**仅供 OC Desktop 壳使用**的 opencode 插件源码。它**不是**运行时目录：
+本目录存放**仅供 OC Desktop（Electron on HarmonyOS Edition）壳使用**的 opencode 插件源码。它**不是**运行时目录：
 opencode 不会读这里，HAP 把它直接放进 `resfile` 也不会生效（见下文「物化路径」）。
 
 对应规格：[`specs/201-plugin-runtime`](../specs/201-plugin-runtime/)（插件机制与三档降级）；

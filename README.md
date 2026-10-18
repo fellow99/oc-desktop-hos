@@ -1,8 +1,10 @@
-# OC Desktop（oc-desktop-hos）
+# OC Desktop · Electron on HarmonyOS Edition（`oc-desktop-hos`）
 
-opencode 桌面端的**鸿蒙（HarmonyOS / OpenHarmony）移植**：用 `harmonypc-electron` 提供的
-Electron-on-HarmonyOS 运行时承载 **opencode v2 的服务端**，渲染层以 **ArkWeb（目标）/ Chromium（回退）**
-同源加载服务端内嵌的 v2 Web UI，打包为可签名分发的 HAP。
+> **版别定位：Electron on HarmonyOS Edition** —— OC Desktop 的两个鸿蒙版别之一；
+> 另一个是 [`oc-desktop-ark`](../oc-desktop-ark)（**HarmonyOS Edition**：进程内 Node + ArkWeb，无 Electron）。
+>
+> 本版用 `harmonypc-electron` 提供的 Electron-on-HarmonyOS 运行时承载 **opencode v2 的服务端**，
+> 渲染层以 **ArkWeb（目标）/ Chromium（回退）** 同源加载服务端内嵌的 v2 Web UI，打包为可签名分发的 HAP。
 
 > **本工程非 opencode 团队构建**，与 [opencode](https://github.com/anomalyco/opencode) 无隶属关系；
 > opencode 为上游开源项目，本工程仅是其桌面形态在 HarmonyOS 上的第三方移植。
@@ -25,7 +27,7 @@ electron/            entry 模块：运行时 SO + Chromium 资源 + Ability 装
 web_engine/          HAR：ArkTS 桥接层 + resfile 承载应用产物（含 opencode-dist.tar.gz）
 src-main/            Electron 主进程源码（main.js / sidecar.js / tar-extract.js）
 scripts/             构建流水线（见下）
-patches/v2.0.26/     对上游的幂等补丁（0001–0004，含 README）
+patches/v2.0.26/     对上游的幂等补丁（0001–0008，含 README）
 runtime-overlays/    copy 后回盖白名单（模块清单 / 显示名资源）
 specs/               NNN-name/{spec.md,plan.md} 规格体系（索引见 specs/README.md）
 docs/                工程规划 + 四件套（能力清单 / ACL 清单 / toybox 清单 / 真机验证记录）
