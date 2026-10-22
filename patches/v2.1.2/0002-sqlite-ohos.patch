@@ -1,18 +1,18 @@
 diff --git a/packages/core/package.json b/packages/core/package.json
-index f3b7fb9738..4e0fb3e7db 100644
+index 7cad834246..67dcecb6d4 100644
 --- a/packages/core/package.json
 +++ b/packages/core/package.json
-@@ -32,6 +32,7 @@
-   "imports": {
+@@ -33,6 +33,7 @@
      "#sqlite": {
        "workerd": "./src/database/sqlite.workerd.ts",
-+      "ohos": "./src/database/sqlite.ohos.ts",
        "bun": "./src/database/sqlite.bun.ts",
++      "ohos": "./src/database/sqlite.ohos.ts",
        "node": "./src/database/sqlite.node.ts",
        "default": "./src/database/sqlite.node.ts"
+     },
 diff --git a/packages/core/src/database/sqlite.ohos.ts b/packages/core/src/database/sqlite.ohos.ts
 new file mode 100644
-index 0000000000..f51795a2c3
+index 0000000000..8045b37844
 --- /dev/null
 +++ b/packages/core/src/database/sqlite.ohos.ts
 @@ -0,0 +1,294 @@
@@ -47,9 +47,9 @@ index 0000000000..f51795a2c3
 + */
 +import { createRequire } from "node:module"
 +import { Context, Effect, Layer } from "effect"
-+import { Reactivity } from "effect/unstable/reactivity"
-+import { SqlClient } from "effect/unstable/sql"
-+import { classifySqliteError, SqlError } from "effect/unstable/sql/SqlError"
++import { Reactivity } from "effect/reactivity"
++import { SqlClient } from "effect/sql"
++import { classifySqliteError, SqlError } from "effect/sql/SqlError"
 +import { Sqlite } from "./sqlite.js"
 +
 +const TypeId = "~@opencode/core/database/SqliteOhos" as const
