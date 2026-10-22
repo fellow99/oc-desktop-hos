@@ -916,7 +916,9 @@ export function assertArchiveBranded(bytes, options = {}) {
       manifest?.start_url === '/' &&
       manifest?.scope === '/' &&
       Array.isArray(manifest?.icons) &&
-      manifest.icons.length === 2 &&
+      // v2.1.2 起上游为每个尺寸同时声明 purpose=any 与 purpose=maskable（4 条）；断言只锚定
+      // 「去重后的 src 集合仍是 dev 频道的 192/512 两枚品牌图标」，不再写死条目数。
+      new Set(manifest.icons.map((icon) => icon.src)).size === 2 &&
       manifest.icons.every((icon) => /^\/icons\/[a-z]+\/web-app-manifest-\d+x\d+\.png$/.test(icon.src) && icon.type === 'image/png'),
     JSON.stringify({ id: manifest?.id, start_url: manifest?.start_url, scope: manifest?.scope, icons: manifest?.icons?.map((icon) => icon.src) }),
   );
