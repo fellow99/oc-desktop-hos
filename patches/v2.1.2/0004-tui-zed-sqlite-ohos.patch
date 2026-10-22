@@ -1,0 +1,72 @@
+diff --git a/packages/tui/package.json b/packages/tui/package.json
+index a57e1a3633..af03e7868f 100644
+--- a/packages/tui/package.json
++++ b/packages/tui/package.json
+@@ -38,6 +38,7 @@
+     },
+     "#zed-sqlite": {
+       "bun": "./src/editor-zed-sqlite.bun.ts",
++      "ohos": "./src/editor-zed-sqlite.ohos.ts",
+       "node": "./src/editor-zed-sqlite.node.ts",
+       "default": "./src/editor-zed-sqlite.bun.ts"
+     },
+diff --git a/packages/tui/src/editor-zed-sqlite.ohos.ts b/packages/tui/src/editor-zed-sqlite.ohos.ts
+new file mode 100644
+index 0000000000..46c1ee37de
+--- /dev/null
++++ b/packages/tui/src/editor-zed-sqlite.ohos.ts
+@@ -0,0 +1,54 @@
++/**
++ * HarmonyOS (`ohos`) variant of `#zed-sqlite`.
++ *
++ * 设备侧 Electron 37 的 Node 未编译 `sqlite` 内部绑定：产物只要**静态** `import "node:sqlite"`
++ * 就会在模块加载期抛 `No such binding: sqlite`（整个 CLI 产物无法启动，表现为服务端宿主
++ * 无输出、应用白屏）。`packages/tui/package.json` 的 `#zed-sqlite` 之前只有 `bun` / `node` /
++ * `default` 三个条件，因此在 `conditions: ["ohos", "node"]` 下落到 node 变体。
++ *
++ * 本变体改用 better-sqlite3（aarch64-ohos 的 .node，由 scripts/collect-opencode.mjs 物化并在
++ * 设备上通过 `OPENCODE_BETTER_SQLITE3_PATH` 指定），与
++ * `packages/core/src/database/sqlite.ohos.ts` 同一策略：不用 node:sqlite。
++ */
++import { createRequire } from "node:module"
++
++// Resolved against the bundle, so a bare specifier finds the `node_modules` shipped with it.
++const require = createRequire(import.meta.url)
++
++interface Statement {
++  all(parameters?: Record<string, unknown>): unknown[]
++  get(parameters?: Record<string, unknown>): unknown
++}
++
++interface BetterSqlite3Database {
++  prepare(sql: string): Statement
++  close(): void
++}
++
++type BetterSqlite3Constructor = new (filename: string, options?: { readonly?: boolean }) => BetterSqlite3Database
++
++function loadBetterSqlite3(): BetterSqlite3Constructor {
++  const specifier = process.env.OPENCODE_BETTER_SQLITE3_PATH ?? "better-sqlite3"
++  const loaded = require(specifier) as BetterSqlite3Constructor | { default?: BetterSqlite3Constructor }
++  return ((loaded as { default?: BetterSqlite3Constructor }).default ?? loaded) as BetterSqlite3Constructor
++}
++
++export class Database {
++  readonly #database: BetterSqlite3Database
++
++  constructor(file: string, options?: { readonly?: boolean }) {
++    this.#database = new (loadBetterSqlite3())(file, { readonly: options?.readonly === true })
++  }
++
++  query(sql: string) {
++    const statement = this.#database.prepare(sql)
++    return {
++      all: (parameters?: Record<string, unknown>) => (parameters ? statement.all(parameters) : statement.all()),
++      get: (parameters?: Record<string, unknown>) => (parameters ? statement.get(parameters) : statement.get()),
++    }
++  }
++
++  close() {
++    this.#database.close()
++  }
++}

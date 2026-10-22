@@ -1,0 +1,46 @@
+diff --git a/packages/tui/package.json b/packages/tui/package.json
+index af03e7868f..b969b926f9 100644
+--- a/packages/tui/package.json
++++ b/packages/tui/package.json
+@@ -33,6 +33,7 @@
+     },
+     "#string-width": {
+       "bun": "./src/util/string-width.bun.ts",
++      "ohos": "./src/util/string-width.ohos.ts",
+       "node": "./src/util/string-width.node.ts",
+       "default": "./src/util/string-width.bun.ts"
+     },
+diff --git a/packages/tui/src/util/string-width.ohos.ts b/packages/tui/src/util/string-width.ohos.ts
+new file mode 100644
+index 0000000000..640fc16cac
+--- /dev/null
++++ b/packages/tui/src/util/string-width.ohos.ts
+@@ -0,0 +1,28 @@
++/**
++ * HarmonyOS (`ohos`) variant of `#string-width`.
++ *
++ * 为什么需要它：`string-width.node.ts` 在**模块顶层**构造
++ *     new RegExp("^\p{Emoji}\p{Mark}*$", "u")
++ *     new RegExp("^\p{Emoji_Presentation}", "u")
++ * 而设备侧 V8/ICU **不提供 `Emoji` 这类二进制属性** —— 运行期报
++ * `SyntaxError: Invalid regular expression: /^\p{Emoji}\p{Mark}*$/u: Invalid property name`。
++ * 该模块随 CLI 单文件产物在**初始化期**被求值，于是整个服务端 import 失败、应用白屏
++ * （真机现场见 `logs/20261013-1/INCRITENT` 记录与 `ocr-trace.log` 的 `[启动服务端宿主] FAIL`）。
++ *
++ * `packages/tui/package.json` 的 `#string-width` 原先只有 `bun` / `node` / `default` 三个条件，
++ * 在构建期 `resolve.conditions: ["ohos", "node"]`（patch 0001）下落到 `node` 变体；本变体补上 `ohos`。
++ *
++ * 算法差异（刻意为之，且**不影响服务端行为**）：去掉 emoji 宽度特例，直接对每个字素簇取
++ * `string-width` 的量宽结果。被去掉的特例只做一件事 —— 当某个 emoji 簇按 `string-width` 量到 2 时，
++ * 依据 `\p{Emoji}` / `\p{Emoji_Presentation}` 判断它是否「实际按 1 列渲染」。这是 TUI（终端）文本
++ * 对齐的显示细节；`stringWidth` 的消费方只有 `packages/tui/src/util/{collapse-tool-output,locale,marquee}.ts`，
++ * 而本工程在设备上**不提供终端**（PTY 平台级不可用，`#pty` 已由 patch 0003 打桩），因此该差异不可观测。
++ */
++import measure from "string-width"
++import stripAnsi from "strip-ansi"
++
++const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" })
++
++export function stringWidth(value: string) {
++  return Array.from(graphemes.segment(stripAnsi(value))).reduce((total, part) => total + measure(part.segment), 0)
++}

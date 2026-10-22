@@ -3,7 +3,7 @@
  * build-opencode.mjs —— 阶段 ②：打补丁 → 构建 opencode 的 Node 产物 → 收集（工程规划 §6.1/§6.2）。
  *
  * 步骤（任一步失败即非零退出）：
- *   0 前置校验：../opencode 存在且位于预期基线；bun 版本满足 ^1.4.2；patches/v2.0.26/ 非空
+ *   0 前置校验：../opencode 存在且位于预期基线；bun 版本满足 ^1.4.2；patches/v2.1.2/ 非空
  *   1 幂等打补丁：逐个性判断（git apply --reverse --check 成功 ⇒ 已应用 ⇒ 跳过）
  *   2 bun install --os=* --cpu=*（拉齐各平台可选依赖，构建期需要）
  *   3 bun run --cwd packages/cli script/build-node.ts --target=linux-arm64 --bundle-only
@@ -45,9 +45,9 @@ import {
 const PROJECT_ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const WORKSPACE_ROOT = resolve(PROJECT_ROOT, '..');
 const OPENCODE_DIR = resolve(process.env.OCR_OPENCODE_DIR || join(WORKSPACE_ROOT, 'opencode'));
-const PATCH_DIR = join(PROJECT_ROOT, 'patches', 'v2.0.26');
-/** 上游基线（docs/工程规划-V2.md 文档头）：tag v2.0.26 / 提交 9b4ec5714d */
-const EXPECTED_BASELINE = process.env.OCR_OPENCODE_BASELINE || '9b4ec5714d';
+const PATCH_DIR = join(PROJECT_ROOT, 'patches', 'v2.1.2');
+/** 上游基线（docs/工程规划-V2.md 文档头）：tag v2.1.2 / 提交 a517687fde */
+const EXPECTED_BASELINE = process.env.OCR_OPENCODE_BASELINE || 'a517687fde';
 
 const args = parseArgs();
 const SKIP_INSTALL = args.has('skip-install');
@@ -77,10 +77,10 @@ function stage0Preflight() {
   const head = runOrFail('git', ['-C', OPENCODE_DIR, 'rev-parse', '--short', 'HEAD']).stdout.trim();
   require_(
     head.startsWith(EXPECTED_BASELINE.slice(0, 8)) || head === EXPECTED_BASELINE,
-    `上游基线不匹配：当前 HEAD=${head}，期望 ${EXPECTED_BASELINE}（v2.0.26）。\n  补丁按该基线生成，换基线必须重生成补丁并新建 patches/<新tag>/。`,
+    `上游基线不匹配：当前 HEAD=${head}，期望 ${EXPECTED_BASELINE}（v2.1.2）。\n  补丁按该基线生成，换基线必须重生成补丁并新建 patches/<新tag>/。`,
   );
   const packageJson = readText(join(OPENCODE_DIR, 'package.json'));
-  require_(/"version":\s*"2\.0\.26"/.test(packageJson), '上游 package.json 版本不是 2.0.26，请确认基线');
+  require_(/"version":\s*"2\.1\.2"/.test(packageJson), '上游 package.json 版本不是 2.1.2，请确认基线');
   log('build-opencode', `上游基线 HEAD=${head}，补丁 ${patches.length} 个: ${patches.join(', ')}`);
 }
 

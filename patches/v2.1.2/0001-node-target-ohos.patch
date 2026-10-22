@@ -1,0 +1,40 @@
+diff --git a/packages/cli/vite.node.config.ts b/packages/cli/vite.node.config.ts
+index 16a9c57c4d..48248b4cdf 100644
+--- a/packages/cli/vite.node.config.ts
++++ b/packages/cli/vite.node.config.ts
+@@ -114,7 +114,7 @@ const resolve = {
+       replacement: path.join(path.dirname(createRequire(import.meta.url).resolve("ws/package.json")), "wrapper.mjs"),
+     },
+   ],
+-  conditions: ["node"],
++  conditions: ["ohos", "node"],
+ }
+ 
+ const output = (entryFileNames: string, banner?: string) => ({
+@@ -161,7 +161,12 @@ import __cjs_mod__ from "node:module"
+ import { chmodSync as __ocChmod, existsSync as __ocExists, lstatSync as __ocLstat, mkdirSync as __ocMkdir, renameSync as __ocRename, rmSync as __ocRm, writeFileSync as __ocWrite } from "node:fs"
+ import { tmpdir as __ocTmpdir } from "node:os"
+ import __ocPath from "node:path"
+-import { getAssetKeys as __ocAssetKeys, getRawAsset as __ocRawAsset, isSea as __ocIsSea } from "node:sea"
++import { getRawAsset as __ocRawAsset, isSea as __ocIsSea } from "node:sea"
++import * as __ocSeaCompat from "node:sea"
++// Node 22（Electron 37 内置）的 node:sea 尚无 getAssetKeys 导出：若直接命名导入，ESM 会在实例化阶段
++// 抛 "does not provide an export named 'getAssetKeys'"，产物无法加载。本工程只走非 SEA 路径，
++// 因此缺失时退化为空实现（见 patches/v2.0.26 与工程规划 §3.4 的 Node 版本对齐门禁）。
++const __ocAssetKeys = typeof __ocSeaCompat.getAssetKeys === "function" ? __ocSeaCompat.getAssetKeys : () => []
+ import { fileURLToPath as __ocFileURLToPath } from "node:url"
+ const __filename = import.meta.filename
+ const __dirname = import.meta.dirname
+@@ -282,10 +287,10 @@ export function mainConfig(input: NodeBuildInput): UserConfig {
+       FFF_LIBC: input.target.platform === "linux" ? JSON.stringify("gnu") : "undefined",
+       "process.env.WS_NO_BUFFER_UTIL": JSON.stringify("1"),
+     },
+-    ssr: { noExternal: true },
++    ssr: { noExternal: true, resolve: { conditions: ["ohos", "node"] } },
+     build: {
+       ssr: "src/node/index.ts",
+-      target: "node26",
++      target: process.env.OPENCODE_NODE_TARGET ?? "node26",
+       outDir: "dist-node",
+       emptyOutDir: false,
+       minify: true,

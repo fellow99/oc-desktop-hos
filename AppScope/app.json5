@@ -3,9 +3,9 @@
     "bundleName": "org.fellow99.oc.OCDesktop",
     "vendor": "fellow99",
     // 版本规则（与 pi-desktop-hos 一致）：versionCode = major*10000 + minor*100 + patch
-    // 2.0.26 → 2*10000 + 0*100 + 26 = 20026
-    "versionCode": 20026,
-    "versionName": "2.0.26",
+    // 2.1.2 → 2*10000 + 1*100 + 2 = 20102
+    "versionCode": 20102,
+    "versionName": "2.1.2",
     "icon": "$media:app_icon",
     "label": "$string:app_name",
     "configuration": "$profile:configuration",
