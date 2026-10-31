@@ -10,7 +10,7 @@
 | 技能载体 | 本工程 `skills/<name>/SKILL.md`（随包投放，构建期进入产物投放区） | `docs/工程规划-V2.md` §4.1、§4.3 |
 | 与上游的关系 | 技能格式按 opencode v2 的 `SKILL.md` 约定；发现路径与加载时机 ⬜ 待与上游源码核对 | 同上 §4.3；⬜ |
 | 权威规范源 | `docs/鸿蒙环境能力清单.md`（能力 × 状态 × 根因层 × 证据）、`docs/toybox命令清单.md`（命令可达性）、`docs/ACL申请清单.md`（权限边界） | 本次创建 |
-| 能力契约源 | `specs/010-tool-shell/`、`specs/011-workspace-auth/`、`specs/012-data-dirs-sqlite/`、`specs/201-plugin-runtime/` | 本次创建 |
+| 能力契约源 | `specs/207-plugin-shell/`、`specs/114-workspace-auth/`、`specs/115-data-dirs-sqlite/`、`specs/201-plugin-runtime/` | 本次创建 |
 | 状态判定来源 | `docs/真机验证记录.md`（⬜ → ✅ 的唯一依据） | 本次创建 |
 | 同类先例 | 🔶 同型工程：技能未随能力同步 → 模型拒绝使用已交付工具；该先例使「同步治理」成为硬需求 | `docs/工程规划-V2.md` §4.3、§9.2 |
 

@@ -53,7 +53,7 @@
 - 上游源码入库改动（一律以补丁落地；`../opencode` 工作树不提交）。
 - `packages/protocol` / `packages/server` 改动（复用既有 `POST /api/rpc/:rpcID/:method`，**零 codegen**）。
 - ArkTS 改动（`ContextPathAdapter.getUser*Dir` 保持空实现；路径走 FR-203-004）。
-- 权限**声明面**改动（只消费 `006-signing-identity` 已声明的三项目录权限）。
+- 权限**声明面**改动（只消费 `108-signing-identity` 已声明的三项目录权限）。
 - 整盘浏览、文件选择、多选、重命名、删除、隐藏文件开关、手动路径输入。
 - 收紧 `fs/list` 的根限制（§5 根围栏说明中已披露性质；属独立变更）。
 - 父工程 `specs/` 登记（本模块规格仅落在 `oc-desktop-hos/specs/`）。
@@ -114,7 +114,7 @@
 | FR-203-022 | 授权回调为已授权后 MUST **重试一次全新的列举**，并 MUST **以列举是否成功作为唯一事实判据**；MUST NOT 仅凭 `CheckPermissions` 返回值判定成功 | MUST | 🔶 沿用同型工程真机结论（F8）：check 桥在系统开关已开时仍可能返回 `false` |
 | FR-203-023 | 授权失败/拒绝时 MUST 展示原因 + 「去系统设置」入口（经 `ElectronApp.OpenApplicationInfoEntry` 深链到本应用信息页）；返回后用户可手动重试 | MUST | ✅ 绑定已存在（`web_engine/src/main/ets/jsbindings/ElectronAppAdapterBind.ets:60`）；⬜ 真机 |
 | FR-203-024 | 权限桥不可用（`electron` 不可达 / 无 active context / 回调类型非预期）时 MUST 明确归因提示，MUST NOT 静默失败、MUST NOT 假装成功 | MUST | 设计决策；host 侧可判定 |
-| FR-203-025 | 本模块 MUST NOT 新增权限声明；权限相关操作 MUST NOT 改变权限声明面或插件树状态 | MUST | `specs/006-signing-identity` FR-006-011 / FR-006-025 |
+| FR-203-025 | 本模块 MUST NOT 新增权限声明；权限相关操作 MUST NOT 改变权限声明面或插件树状态 | MUST | `specs/108-signing-identity` FR-108-011 / FR-108-025 |
 
 ### 3.5 装配与加载
 
@@ -226,7 +226,7 @@
 
 - 约束 1：**上游零改动入库** —— 所有上游改动以 `patches/v2.0.26/0007-*.patch` 落地（FR-203-028）。
 - 约束 2：**零 codegen** —— 不改协议、不重新生成客户端（FR-203-027）。
-- 约束 3：**不加权限声明**（FR-203-025）；桌面权限是否获批由 `006-signing-identity` 的 ACL 批次决定。
+- 约束 3：**不加权限声明**（FR-203-025）；桌面权限是否获批由 `108-signing-identity` 的 ACL 批次决定。
 - 约束 4：**根围栏是 UI + 插件层围栏，不是内核沙箱** —— `fs/list` 本身不做根限制（与现状一致）；本模块不扩大、也不收紧该 API 面。
 - 约束 5：**应用域是唯一可信观测点**（`docs/真机验证记录.md` 纪律 3）；「能否访问用户目录」的判定必须在应用域完成。
 - 约束 6：**禁 symlink**；插件物化为 copy（`plugins/README.md` §3）。
@@ -245,9 +245,9 @@
 **本工程其它模块**
 
 - `specs/201-plugin-runtime/` —— 插件机制、物化路径与校验（本模块消费其装配约定）。
-- `specs/011-workspace-auth/` —— 项目目录选择与授权口径（本模块落地其入口形态；本节不重复其验收口径）。
-- `specs/006-signing-identity/` —— 三项目录权限的声明与 ACL 归属（FR-203-025 的依据）。
-- `specs/005-build-pipeline/` / `specs/003-artifact-bootstrap/` —— 流水线与产物就位（本模块复用，无改动）。
+- `specs/114-workspace-auth/` —— 项目目录选择与授权口径（本模块落地其入口形态；本节不重复其验收口径）。
+- `specs/108-signing-identity/` —— 三项目录权限的声明与 ACL 归属（FR-203-025 的依据）。
+- `specs/112-build-pipeline/` / `specs/102-artifact-bootstrap/` —— 流水线与产物就位（本模块复用，无改动）。
 - `src-main/main.js` —— `configureEnvironment()` / `ensureWorkspace()` / `materializePlugins()`（FR-203-003/004）。
 - `docs/ACL申请清单.md` —— 权限声明面的事实来源。
 - `docs/鸿蒙环境能力清单-v2.0.26.md` / `docs/真机验证记录.md` —— 真机结论落点。

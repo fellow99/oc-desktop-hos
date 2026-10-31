@@ -1,135 +1,249 @@
-# specs/ —— 规格索引与编写规范
+# specs/ —— OC Desktop · Electron on HarmonyOS Edition 规格索引
 
-本目录是 `oc-desktop-hos` 的**可验收规格**集合：每个模块一个目录，`spec.md`（需求与验收）+
-`plan.md`（设计与实现方案）成对出现。工程级结论与依据在 [`docs/工程规划-V2.md`](../docs/工程规划-V2.md)
-（分工边界见该文档 §0.1；本目录的编号规范来自该文档 §9.1）。
+> **工程：** `oc-desktop-hos`（Electron 37 / Node 22.17 / Chromium 138）
+> **版本：** 2.2.5 / `versionCode 20205`
+> **上游基线：** opencode **v2.2.5**（`9bbb8ce18c` / `Branch_v2.2.5`）
+> **方法：** `specs-as-built` —— 以源码、构建脚本与真机证据为事实源；`spec.md` 写做什么/判据，`plan.md` 写怎么做/落点。
+> **父规范：** [`../../specs/constitution.md`](../../specs/constitution.md)（编号与文档分工）、[`../../specs/013-branding/`](../../specs/013-branding/)、[`../../specs/012-building-workflow/`](../../specs/012-building-workflow/)。
+> **最后更新：** 2026-11-01（按父宪法重排编号：`0XX` 公共、`1XX` 基础、`2XX` 插件）
 
-## 1. 编号分配表
+---
 
-约定：`0NN` = 主进程装配 / 构建与配置 / 运行时集成；`010+` = 运行时能力；
-`2NN` = 扩展模块（**从 201 起**，不与 `0NN` 段混用）。编号一旦发布**不复用、不回填**。
+## 一、文档总览
 
-**状态说明**：当前全部模块为 `Proposed`（规格已提出、待评审/待探针定稿）。
-本表只声明**编号归属与主题**，不声明文件是否已存在——目录实际内容以 `spec.md` / `plan.md` 为准（§2）。
-
-| 编号 | 名称 | 主题 | 主要上游依赖 |
+| 层级 | 分类 | 文档数量 | 说明 |
 |---|---|---|---|
-| 001 | `render-channel` | 渲染通道抽象：R2（ArkWeb，目标）/ R1（Chromium，回退）的选通道、URL 构造、loading、P0-2 探针测项 | 007、008 |
-| 002 | `lifecycle` | 启动时序编排、失败可见、退出清理（不做后台常驻） | 003、007、008 |
-| 003 | `artifact-bootstrap` | 产物就位与首启：resfile 产物、流式解压、SHA-256 marker、旧产物清理 | —（流水线阶段 ①② 产出） |
-| 004 | `request-hooks` | 请求头与凭据钩子：`Host`/`Origin` 改写（loopback）、Basic 注入、非安全上下文开关 | 001、008 |
-| 005 | `build-pipeline` | 四阶段流水线：`collect-runtime` / `build-opencode` / `collect-app` / `smoke-node22` + PowerShell 构建脚本 | — |
-| 006 | `signing-identity` | 签名与身份：bundleName / AppScope、debug 与 release 签名材料、`versionCode`、产物形态 | 005 |
-| 007 | `runtime-host` | 宿主形态定标（P0-1 三候选裁决）与服务端进程模型 | — |
-| 008 | `server-ui-load` | 服务端启动 argv/env、健康检查、UI 加载与就绪判定 | 003、007、012 |
-| 010 | `tool-shell` | `bash`/shell 工具：常驻单 shell + 哨兵行、路径围栏（fail-closed）、超时/取消 | 007、012 |
-| 011 | `workspace-auth` | 项目目录选择与授权（`fileShare.activatePermission`、真实路径、每次启动重申） | 007 |
-| 012 | `data-dirs-sqlite` | 数据目录映射（`XDG_*` / `HOME` / `TMPDIR` + `os.tmpdir()` patch）与 better-sqlite3 持久化 | — |
-| 201 | `plugin-runtime` | 插件机制与三档降级（L0 关闭 / L1 仅本地 / L2 允许安装）、物化路径与校验 | 003、005 |
-| 202 | `skill-runtime-capabilities` | 壳专用技能与设备能力清单（`skills/` 树投放与能力口径） | 005 |
-| 203 | `plugin-workspace-picker` | 选择工作区目录：四主目录（沙箱/桌面/文档/下载）切换、逐级浏览、新建文件夹与采纳；能力走壳专用插件 RPC（`context.rpc.register`，零 codegen），UI 走最小上游补丁且自门控 | 201、011、006 |
-| 204 | `plugin-git` | Git 操作：把纯 JS 的 `isomorphic-git` 嵌入应用，提供 21 个 `git_*` 工具（仓库根 chroot 围栏）、覆盖内置 VCS provider（`id:"git"`，让自带 diff/分支界面可用），以及经插件 RPC + 最小上游补丁的「设置 → Git」凭据页（`~/.git-credentials`，`0600`） | 201、102、203、006 |
+| 公共 | `011` 版本更新 | 3 个版本四件套 | v2.0.26 / v2.1.2 / v2.2.5 |
+| 公共 | `013` 品牌化 | 4 | spec / plan / tasks / test-cases |
+| 基础 | `101–115` | 20（10 模块 × spec+plan） | 运行时、载荷、渲染、鉴权、签名、生命周期、构建、UI 加载、工作区、数据 |
+| 插件 | `201–207` | 12+ | 插件运行时、技能、工作区、Git、JS 工具、shell |
+| **合计** | **20 个模块目录** | **+ README** | 不含可选 tasks/test-cases |
 
-补充说明：
+> 本工程无独立 `API.md` / `overall-api.md`；API 契约以上游 `/api/*` 为准。
 
-- **009 当前未分配**（预留，不属任何已规划模块）。新增「运行时能力」模块从 **013** 起向后追加，
-  新增扩展模块从 **204** 起向后追加；不要回填空缺号。
-- 搜索兜底（`#fff` 纯 JS 变体，工程规划 §7.4a）暂并入 010+ 段评估，定型后单列编号。
-- 规划文档 §9.1 的「区间 → 主题」对照是编号分配的**唯一依据**；本表是它的落地展开。
+---
 
-## 2. 目录形态与 `spec.md` / `plan.md` 成对约定
+## 二、公共模块（`0XX`）
 
-```
-specs/
-├── README.md                 # 本文件：索引 + 编号分配 + 编写规范
-├── 0NN-<name>/               # 主进程装配 / 构建 / 运行时集成
-│   ├── spec.md               # 需求与验收（必备）
-│   ├── plan.md               # 设计与实现方案（必备）
-│   └── tasks.md              # 任务清单（可选；只有复杂模块才建）
-└── 2NN-<name>/               # 扩展模块（从 201 起）
-```
+### 011 — 版本更新（Version）
 
-成对约定（硬要求）：
+| 版本 | 目录 | 文档 | 状态 |
+|---|---|---|---|
+| v2.0.26 | [011-version-2.0.26/](./011-version-2.0.26/) | spec / plan / tasks / test-cases | ✅ 历史锚点 |
+| v2.1.2 | [011-version-2.1.2/](./011-version-2.1.2/) | spec / plan / tasks / test-cases | ✅ 历史锚点 |
+| v2.2.5 | [011-version-2.2.5/](./011-version-2.2.5/) | spec / plan / tasks / test-cases | ✅ 当前；真机待补 `⬜` |
 
-1. **`spec.md` 与 `plan.md` 必须成对**：只交一半视为未完成。`spec.md` 回答「做什么、怎么算做完」，
-   `plan.md` 回答「怎么做、怎么验」；同一模块的两份文档必须互相引用（`plan.md` 头部写
-   `> 对应规格：[spec.md](./spec.md)`，`spec.md` 的依赖段反引 `../NNN-name/`）。
-2. **目录名 = `<三位编号>-<kebab-name>`**，与编号分配表严格一致（改名 = 新建模块，旧目录保留可追溯）。
-3. **两份文档共用同一头部元信息行**（字段顺序固定）：
+### 013 — 品牌化（Branding）
 
-   ```
-   > **Module:** 001-render-channel ｜ **Status:** Proposed ｜ **Last Updated:** YYYY-MM-DD ｜ **上游基线:** opencode v2.0.26（Branch_v2.0.26）
-   ```
+> 从原 `103-branding` 迁移；构建期改归档 title/字标/PWA + 37 项守卫。
 
-4. **`spec.md` 固定章节**：1 模块概述（1.1 目的 / 1.2 解决的问题 / 1.3 范围[含「不包含」]）→
-   2 用户故事 → 3 功能需求 → 4 关键实体 → 5 验收场景 → 6 非功能需求 → 7 假设与约束 → 8 依赖。
-5. **`plan.md` 固定章节**：1 技术上下文 → 2 关键决策 → 3 数据模型 → 4 接口契约（4.1 本模块提供 /
-   4.2 本模块消费）→ 5 实现策略（含错误处理与降级）→ 6 测试与验证（6.1 host 侧 / 6.2 真机命令 /
-   6.3 验收口径）→ 7 文件清单 → 8 与规格的交叉引用。
-6. **状态只从 `Proposed` → `Accepted` → `Implementing` → `Implemented` → `Superseded` 单向推进**；
-   状态变更必须同时更新 `Last Updated`。当前全部为 `Proposed`。
-7. **不加占位内容**：不允许留空章节或未定项占位标记；未定论的项写成 ⬜ 待验证条目，
-   并写明「用哪个探针/命令定论、定论后写进哪份文档」。
-
-## 3. 功能需求（FR）编号与写法
-
-- 格式：`FR-<模块编号>-<三位序号>`，例如 `FR-001-012`、`FR-010-003`。
-  模块编号取目录的三位编号；序号**从 001 起、连续、不复用**。
-- 每条 FR 一行，谓语用 **MUST / MUST NOT / SHOULD / MAY**（大写英文），陈述必须**可判定**
-  （能被 host 命令或真机命令检查），禁止「尽量」「尽快」「更好地」这类不可判定的表述。
-- **编号只增不改语义**：澄清措辞可在原编号上修订（同步 `Last Updated`）；语义变更 = 新建编号，
-  旧编号标记为被取代并注明取代者。删除需求 = 保留编号并标注 `[SUPERSEDED by FR-xxx-yyy]`，
-  不允许直接删行或让序号出现空洞。
-- `plan.md` 的关键决策、接口契约、测试用例**必须反引 FR 编号**（形如「（FR-001-006）」），
-  使「需求 → 设计 → 验收」可双向追溯。
-- 验收场景章节按「场景 N：<可观测结果>」组织，每条场景写明：前置、动作（含确切命令）、
-  期望结果；负例场景必须存在（例如缺 `domStorageAccess`、产物未就位、围栏拒绝、超时）。
-
-## 4. 证据标注口径（与工程规划 §0.2 一致）
-
-规则文档里每个**事实性断言**都要带标记，**不要把推断当实测**：
-
-| 标记 | 含义 | 使用要求 |
+| 文档 | 链接 | 说明 |
 |---|---|---|
-| ✅ 实测 | 在真机或上游源码上直接验证过 | 必须附来源：真机命令 + 证据落点（`docs/真机验证记录.md` 的轮次）或上游源码路径（`packages/...` / `core/src/...`） |
-| 🔶 沿用 | 沿用同型工程 `dsh-desktop-hos` / V1 的既有结论 | 必须写清沿用来源；**不得**升级表述为「本工程实测」 |
-| ⬜ 待验证 | 本工程必须自行实测后才能定稿 | 必须写清：由哪个探针 / 命令定论、定论后写入哪份文档 |
-| ⚠️ 冲突 | 两份一手材料结论互斥 | 必须挂到工程规划 §10 Phase 0 的探针裁决，不得自行择一 |
+| 功能规格 | [013-branding/spec.md](./013-branding/spec.md) | 应用名/UI 标题/图标/非官方声明/守卫 |
+| 技术方案 | [013-branding/plan.md](./013-branding/plan.md) | `branding.mjs`、`verify-branding.mjs`、物料链路 |
+| 任务清单 | [013-branding/tasks.md](./013-branding/tasks.md) | 落地任务 |
+| 测试用例 | [013-branding/test-cases.md](./013-branding/test-cases.md) | 品牌断言用例 |
 
-其余口径：
+> **012-building-workflow：鸿蒙工程暂无**云端 tag 发布工作流；本工程构建见 [`112-build-pipeline`](./112-build-pipeline/)。父工程公共规格见 [`../../specs/012-building-workflow/`](../../specs/012-building-workflow/)。
 
-- 上游事实优先引**源码位置**（文件 + 函数/符号），不引二手描述；
-- 数值型结论（体积、耗时、文件数）必须标明是否为本工程实测；沿用值要标注「沿用值，本工程待实测」；
-- 真机证据统一落到 `docs/真机验证记录.md`，spec 里只引轮次，不复制日志。
+---
 
-## 5. 与 `docs/工程规划-V2.md` 的引用关系
+## 三、基础功能模块（`1XX`）
 
-- **规划文档给结论与依据，spec 给可验收的需求与设计**（该文档 §0.1 的分工边界）。
-  spec/plan **不重复**规划文档的论证过程，只引用小节号：形如「（工程规划 §3.9）」「（§7.5）」。
-- 引用的是**小节号而非行号**；规划文档升版（V2 → V3）时，spec 侧需复核被引小节是否改号。
-- **反向必须闭环**：规划文档 §4.1 目录结构、§6.1 流水线、§7.5 降级动作、§8.5 合规清单中的每条
-  可执行项，都要能在某个 spec 的 FR 或验收场景里找到落点；找不到落点说明规格缺失，补规格而不是补代码。
-- 与 `docs/` 其他文档的分工（规划文档 §9.2）：能力边界 → `docs/鸿蒙环境能力清单.md`；
-  权限申请 → `docs/ACL申请清单.md`；每轮真机结论 → `docs/真机验证记录.md`。
-  spec 引用它们的结论，不承担它们的职责。
-- 上游基线统一写 `opencode v2.0.26（Branch_v2.0.26）`；换上游 tag 时，受影响的 spec 需单列一节
-  「基线变更影响」，不要直接改历史结论。
+### 101 — 运行时宿主（Runtime Host）
 
-## 6. 密钥与凭据纪律（硬性，2026-10-13 因真实泄漏事故补充）
+> 宿主形态定标（进程内 / utility / worker 三候选）、服务端进程模型、统一宿主契约。
 
-**规格、测试用例、日志、提交信息里一律不得出现真实凭据。** 2026-10-13 本仓库发生过一次真实事故：
-`specs/101-version-2.0.26/spec.md` 的 FR 条目里直接写了需求方给的 DeepSeek API Key，
-随首次提交推送后被 GitGuardian 判为 `DeepSeek API Key` 泄漏。
+| 文档 | 链接 | 说明 |
+|---|---|---|
+| 功能规格 | [101-runtime-host/spec.md](./101-runtime-host/spec.md) | 宿主契约、候选、定标结论落点 |
+| 技术方案 | [101-runtime-host/plan.md](./101-runtime-host/plan.md) | 候选实现、探针、错误与退出 |
 
-规则：
+### 102 — 产物就位（Artifact Bootstrap）
 
-1. **只写占位符**：`<DEEPSEEK_API_KEY>`、`sk-<REDACTED>`、`<TOKEN>` 等；连**前缀/后缀片段**
-   （如「前 6 位 + 后 4 位」这种形式）也不要写 —— 片段同样能缩小暴力空间，且会被扫描器命中。
-2. **真实值由人工在应用内输入**，或放在 gitignored 的本地文件（如 `signing.*.local.json` 的做法），
-   由脚本读取，**绝不入库**。
-3. **提交前自检**：`git diff --cached` 里出现 `sk-`、`ghp_`、`AKIA`、`BEGIN ... PRIVATE KEY`、
-   以及本工程签名材料的密文/口令，一律停下来先确认。
-4. **一旦泄漏，顺序不能反**：
-   ① **先吊销/轮换密钥**（泄漏已不可逆 —— 扫描器、镜像、克隆都可能已经拿到）；
-   ② 再从工作区与**历史**里清除（普通提交只能清掉 HEAD，历史里仍在）；
-   ③ 最后才是复盘与加规则。**不要**用「改写历史」替代「轮换密钥」。
+> HAP 内 `opencode-dist.tar.gz` 首启流式解压到 `<userData>/opencode-dist/`；SHA-256 marker 幂等。
+
+| 文档 | 链接 | 说明 |
+|---|---|---|
+| 功能规格 | [102-artifact-bootstrap/spec.md](./102-artifact-bootstrap/spec.md) | 产物形态、完整性、幂等、升级 |
+| 技术方案 | [102-artifact-bootstrap/plan.md](./102-artifact-bootstrap/plan.md) | 流式解压、marker、旧产物清理 |
+
+### 103 — 渲染通道（Render Channel）
+
+> R2（ArkWeb，目标）/ R1（Chromium，回退）的选通道、URL 构造、loading、探针。
+
+| 文档 | 链接 | 说明 |
+|---|---|---|
+| 功能规格 | [103-render-channel/spec.md](./103-render-channel/spec.md) | 通道选择、首屏、失败可见、外链 |
+| 技术方案 | [103-render-channel/plan.md](./103-render-channel/plan.md) | Web 组件/BrowserWindow、P0-2 探针 |
+
+### 105 — 请求头与凭据钩子（Request Hooks）
+
+> `OPENCODE_PASSWORD` 注入、`Host`/`Origin` 改写、Basic 注入、`NO_PROXY`、日志脱敏。
+
+| 文档 | 链接 | 说明 |
+|---|---|---|
+| 功能规格 | [105-request-hooks/spec.md](./105-request-hooks/spec.md) | 凭据注入、头改写、安全边界 |
+| 技术方案 | [105-request-hooks/plan.md](./105-request-hooks/plan.md) | 密码句柄、钩子安装、健康检查凭据 |
+
+### 108 — 签名与应用身份（Signing Identity）
+
+> bundleName / AppScope、debug/release 签名材料内存注入、`versionCode`、三处显示名同步。
+
+| 文档 | 链接 | 说明 |
+|---|---|---|
+| 功能规格 | [108-signing-identity/spec.md](./108-signing-identity/spec.md) | 身份、签名、版本、ACL 归属 |
+| 技术方案 | [108-signing-identity/plan.md](./108-signing-identity/plan.md) | `hvigorfile.ts` 注入、守卫、三处同步 |
+
+### 111 — 生命周期（Lifecycle）
+
+> 环境装配、`env → artifact → host → health → load` 五阶段、失败可见、退出清理。
+
+| 文档 | 链接 | 说明 |
+|---|---|---|
+| 功能规格 | [111-lifecycle/spec.md](./111-lifecycle/spec.md) | 阶段、失败态、退出、单实例 |
+| 技术方案 | [111-lifecycle/plan.md](./111-lifecycle/plan.md) | 状态机、环境变量单一来源、退出钩子 |
+
+### 112 — 构建流水线（Build Pipeline）
+
+> 四阶段：collect-runtime / build-opencode / collect-app / hvigor 构建签名；host 冒烟门禁。
+
+| 文档 | 链接 | 说明 |
+|---|---|---|
+| 功能规格 | [112-build-pipeline/spec.md](./112-build-pipeline/spec.md) | 阶段、幂等、门禁、产物 |
+| 技术方案 | [112-build-pipeline/plan.md](./112-build-pipeline/plan.md) | 脚本契约、守卫、签名注入 |
+
+### 113 — 服务端与 UI 加载（Server UI Load）
+
+> stock CLI bundle 的 `serve` argv/env、健康检查、UI 同源加载、就绪判定。
+
+| 文档 | 链接 | 说明 |
+|---|---|---|
+| 功能规格 | [113-server-ui-load/spec.md](./113-server-ui-load/spec.md) | 启动契约、就绪、CSP、单实例 |
+| 技术方案 | [113-server-ui-load/plan.md](./113-server-ui-load/plan.md) | argv/env、`/api/info`、UI 归档 |
+
+### 114 — 工作区选择与授权（Workspace Auth）
+
+> 项目目录选择、`fileShare.activatePermission`、真实路径、每次启动重申、路径围栏同源。
+
+| 文档 | 链接 | 说明 |
+|---|---|---|
+| 功能规格 | [114-workspace-auth/spec.md](./114-workspace-auth/spec.md) | 目录授权、权限面、项目根传递 |
+| 技术方案 | [114-workspace-auth/plan.md](./114-workspace-auth/plan.md) | Picker、权限、真实路径、与 shell 围栏 |
+
+### 115 — 数据目录与持久化（Data Dirs / SQLite）
+
+> `HOME` / `XDG_*` / `TMPDIR` / `os.tmpdir()` patch；better-sqlite3 持久化。
+
+| 文档 | 链接 | 说明 |
+|---|---|---|
+| 功能规格 | [115-data-dirs-sqlite/spec.md](./115-data-dirs-sqlite/spec.md) | 目录映射、落盘、WAL、重启可读 |
+| 技术方案 | [115-data-dirs-sqlite/plan.md](./115-data-dirs-sqlite/plan.md) | 环境装配、sqlite 物化、NULL 兜底 |
+
+---
+
+## 四、补丁 / 插件模块（`2XX`）
+
+### 201 — 插件运行时（Plugin Runtime）
+
+> 插件机制与三档降级（L0 关闭 / L1 仅本地 / L2 允许安装）、物化路径与校验。
+
+| 文档 | 链接 | 说明 |
+|---|---|---|
+| 功能规格 | [201-plugin-runtime/spec.md](./201-plugin-runtime/spec.md) | 档位、发现、加载、治理 |
+| 技术方案 | [201-plugin-runtime/plan.md](./201-plugin-runtime/plan.md) | 物化、校验、降级 |
+
+### 202 — 壳专用技能与能力清单（Skill Runtime）
+
+> `skills/` 树投放、能力清单规范源、技能与规范源单向派生。
+
+| 文档 | 链接 | 说明 |
+|---|---|---|
+| 功能规格 | [202-skill-runtime-capabilities/spec.md](./202-skill-runtime-capabilities/spec.md) | 技能内容、能力口径 |
+| 技术方案 | [202-skill-runtime-capabilities/plan.md](./202-skill-runtime-capabilities/plan.md) | 投放、校验 |
+
+### 203 — 工作区选择器插件（Workspace Picker）
+
+> 四主目录（沙箱/桌面/文档/下载）切换、逐级浏览、新建文件夹；插件 RPC + 最小上游补丁。
+
+| 文档 | 链接 | 说明 |
+|---|---|---|
+| 功能规格 | [203-plugin-workspace-picker/spec.md](./203-plugin-workspace-picker/spec.md) | 四根、浏览围栏、权限门、回退 |
+| 技术方案 | [203-plugin-workspace-picker/plan.md](./203-plugin-workspace-picker/plan.md) | 插件 RPC、补丁 0007、状态机 |
+| 任务清单 | [203-plugin-workspace-picker/tasks.md](./203-plugin-workspace-picker/tasks.md) | T1–T6 |
+| 测试用例 | [203-plugin-workspace-picker/test-cases.md](./203-plugin-workspace-picker/test-cases.md) | TC-203-* |
+
+### 204 — Git 插件（Git Plugin）
+
+> isomorphic-git 嵌入；21 个 `git_*` 工具、VCS provider 覆盖、凭据设置页。
+
+| 文档 | 链接 | 说明 |
+|---|---|---|
+| 功能规格 | [204-plugin-git/spec.md](./204-plugin-git/spec.md) | 工具表、凭据、VCS、L1 |
+| 技术方案 | [204-plugin-git/plan.md](./204-plugin-git/plan.md) | 引擎版本、RPC id、物化、风险 |
+| 任务清单 | [204-plugin-git/tasks.md](./204-plugin-git/tasks.md) | 落地任务 |
+| 测试用例 | [204-plugin-git/test-cases.md](./204-plugin-git/test-cases.md) | 插件用例 |
+
+### 206 — 鸿蒙 JS 工具（JS Tools）
+
+> 用纯 JS 插件替代设备上不可得的工具能力（grep/glob 等）；从原 `102-harmony-js-tools` 迁移。
+
+| 文档 | 链接 | 说明 |
+|---|---|---|
+| 功能规格 | [206-js-tools/spec.md](./206-js-tools/spec.md) | 工具面、上限、跳过、降级 |
+| 技术方案 | [206-js-tools/plan.md](./206-js-tools/plan.md) | 插件实现、匹配、上限 |
+| 任务清单 | [206-js-tools/tasks.md](./206-js-tools/tasks.md) | 落地任务 |
+| 测试用例 | [206-js-tools/test-cases.md](./206-js-tools/test-cases.md) | 117 用例口径 |
+
+### 207 — 纯 JS shell 工具插件（Shell Plugin）
+
+> 常驻 `/system/bin/sh` + 随机哨兵、路径围栏（fail-closed）、超时/取消；从原 `010-tool-shell` 迁移。
+
+| 文档 | 链接 | 说明 |
+|---|---|---|
+| 功能规格 | [207-plugin-shell/spec.md](./207-plugin-shell/spec.md) | shell 语义、围栏、超时、错误 |
+| 技术方案 | [207-plugin-shell/plan.md](./207-plugin-shell/plan.md) | 常驻 shell、哨兵协议、围栏 |
+
+---
+
+## 五、编号迁移表
+
+| 旧编号 | 新编号 | 说明 |
+|---|---|---|
+| `001-render-channel` | `103-render-channel` | 渲染通道 → 基础 1XX |
+| `002-lifecycle` | `111-lifecycle` | 生命周期 |
+| `003-artifact-bootstrap` | `102-artifact-bootstrap` | 产物就位 |
+| `004-request-hooks` | `105-request-hooks` | 凭据钩子 |
+| `005-build-pipeline` | `112-build-pipeline` | 构建流水线 |
+| `006-signing-identity` | `108-signing-identity` | 签名身份 |
+| `007-runtime-host` | `101-runtime-host` | 运行时宿主 |
+| `008-server-ui-load` | `113-server-ui-load` | 服务端/UI 加载 |
+| `010-tool-shell` | `207-plugin-shell` | shell 插件 |
+| `011-workspace-auth` | `114-workspace-auth` | 工作区授权 |
+| `012-data-dirs-sqlite` | `115-data-dirs-sqlite` | 数据/持久化 |
+| `101-version-*` | `011-version-*` | 公共版本模块 |
+| `102-harmony-js-tools` | `206-js-tools` | JS 工具插件 |
+| `103-branding` | `013-branding` | 公共品牌模块 |
+
+---
+
+## 六、编写约定
+
+1. `spec.md` 与 `plan.md` 必须成对；`spec.md` 技术无关，`plan.md` 技术具体。
+2. FR 编号格式 `FR-<模块编号>-<三位序号>`；模块编号取目录三位编号。
+3. 事实性断言必须带证据标记：`✅ 实测` / `🔶 沿用` / `⬜ 待验证` / `⚠️ 冲突`。
+4. 上游基线统一写 `opencode v2.2.5（Branch_v2.2.5）`；历史版本在 `011-version-*` 中保留。
+5. 不在规格中写真实凭据；示例用 `<DEEPSEEK_API_KEY>` / `***`。
+6. 新增模块按父宪法编号规则追加，不回填、不复用。
+
+---
+
+## 七、快速导航
+
+| 目标读者 | 推荐顺序 |
+|---|---|
+| 新加入开发者 | `../../specs/constitution.md` → `101-runtime-host` → `102-artifact-bootstrap` → `103-render-channel` |
+| Electron/宿主开发 | `101-runtime-host` → `111-lifecycle` → `113-server-ui-load` → `108-signing-identity` |
+| 构建/发布 | `112-build-pipeline` → `../../specs/012-building-workflow/` → `011-version-2.2.5` |
+| 插件开发 | `201-plugin-runtime` → `203` / `204` / `206` / `207` |
+| 测试/合规 | `011-version-*` 真机记录 → `013-branding` → `../../specs/013-branding/` |

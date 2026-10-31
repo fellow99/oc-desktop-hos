@@ -6,7 +6,7 @@
 > **上游基线**：opencode `v2.0.26`；运行期 Electron 37（Node 22.17.0 / Chromium 138 / ABI v138），外壳 `harmonypc-electron` v37.2.3-20260825.1。
 > **数据来源**：本机 DevEco SDK 权威权限目录 `sdk/default/openharmony/toolchains/lib/PermissionDefinitions.json`（**735 条，第一手**）＋ dsh 工程实际声明 ＋ 本工程 `module.json5` 实际声明。
 > **证据口径**：✅ **实测/已声明** ｜🔶 **沿用** ｜⬜ **待验证** ｜❌ **不申请**。
-> **配套**：能力边界见 `docs/鸿蒙环境能力清单-v2.0.26.md`；能力规格见 `specs/`（本模块为 `specs/006-signing-identity/`）；合规前置见 `docs/工程规划-V2.md` §8.5。
+> **配套**：能力边界见 `docs/鸿蒙环境能力清单-v2.0.26.md`；能力规格见 `specs/`（本模块为 `specs/108-signing-identity/`）；合规前置见 `docs/工程规划-V2.md` §8.5。
 
 ---
 
@@ -114,7 +114,7 @@
 | `ohos.permission.KEEP_BACKGROUND_RUNNING` | `normal` | 8 | `system_grant` | `entry` | 配合 EntryAbility 的 `backgroundModes: ["taskKeeping"]`（长时任务） |
 
 > **`KEEP_BACKGROUND_RUNNING` 的诚实说明**：2in1 上「最小化」**不构成后台**（`aa dump -a` 仍为 `#FOREGROUND`，`onBackground` 不触发），因此该声明**不产生**「退出后仍常驻」的效果（见 `docs/鸿蒙环境能力清单-v2.0.26.md` #13）。声明保留是为了在真正进入后台时的正确性，而**不是**为一个保活承诺。
-> `FILE_ACCESS_PERSIST` 的实际行为（`grantMode: system_grant`、since API 11、卸载清空、每次启动须 `activatePermission`）见 `specs/011-workspace-auth/`。
+> `FILE_ACCESS_PERSIST` 的实际行为（`grantMode: system_grant`、since API 11、卸载清空、每次启动须 `activatePermission`）见 `specs/114-workspace-auth/`。
 
 ---
 
@@ -133,7 +133,7 @@
 | `ohos.permission.SANDBOX_ACCESS_MANAGER`（含 `..._EXT`） | `system_core` | 仅系统应用 |
 | `ohos.permission.GET_DEVICE_INDEPENDENT_BINARY_CERT` / `ohos.permission.SET_DEVICE_INDEPENDENT_BINARY_CERT_STATUS` | `system_core` / 仅 2in1 | 不可得 |
 
-> 这 13 个名字与 `specs/006-signing-identity/spec.md` 的 FR-006-013（MUST NOT 申请）逐项对应；`collect-runtime.mjs` 阶段 10.6 / 10.6d 对 **web_engine 与 entry 两份清单**都断言其不存在。
+> 这 13 个名字与 `specs/108-signing-identity/spec.md` 的 FR-108-013（MUST NOT 申请）逐项对应；`collect-runtime.mjs` 阶段 10.6 / 10.6d 对 **web_engine 与 entry 两份清单**都断言其不存在。
 
 ### 5.2 上游外壳默认声明、但本工程与 dsh **都剪掉**的 10 项（守卫 `PRUNED_PERMISSIONS` 断言**不存在**）
 
@@ -164,7 +164,7 @@
 
 - SDK 权限目录中**不存在**任何以「执行 shell / 启动进程」为语义的权限；`ohos.permission.EXECUTE_CMD` **不存在**（该名字仅见于第三方移植仓库，❓ 未证实，按不存在处理）。
 - 原因：**进程执行不由权限体系管辖**，而由 **SELinux 域 + seccomp** 管辖，并叠加**强制代码签名**门禁。
-- 结论：`specs/010-tool-shell/` 的命令执行能力**不依赖任何新权限** —— 它 spawn 的是系统自带的 `/system/bin/sh`（mksh R59）与 `toybox` applet，不经手任何自有 ELF。这也意味着「shell 工具能不能跑」**不能靠申请权限解决**，只能靠真机验证（⬜ P0-1）。
+- 结论：`specs/207-plugin-shell/` 的命令执行能力**不依赖任何新权限** —— 它 spawn 的是系统自带的 `/system/bin/sh`（mksh R59）与 `toybox` applet，不经手任何自有 ELF。这也意味着「shell 工具能不能跑」**不能靠申请权限解决**，只能靠真机验证（⬜ P0-1）。
 - 同理：`symlink` / `hardlink` / `chmod` 的语义限制**没有对应权限可申请**（按 SELinux 域生效），只能靠实现规避（copy 物化 / 只用 rename / 写入后回读校验）。
 
 ---
@@ -243,7 +243,7 @@
 | `runtime-overlays/web_engine/src/main/module.json5` | 同上的 `requestPermissions` / `definePermissions`（回盖源） | ✅ md5 与目标一致 |
 | `web_engine/src/main/resources/<locale>/element/string.json`（base / en_US / zh_CN） | 8 条权限 `reason` 文案（含 `inherit_parent_permission`、`ignore_library_validation`、`exempt_anonymous_executable_memory` 三个新 key） | ✅ 已加入 `OVERLAY_FILES`，内容与 dsh 一致（否则会被 `collect-runtime` 的上游资源覆盖） |
 | `electron/src/main/module.json5` → `requestPermissions` / `backgroundModes` | `KEEP_BACKGROUND_RUNNING` + EntryAbility `backgroundModes: ["taskKeeping"]` | ✅ 已声明（守卫阶段 10.6d） |
-| `AppScope/app.json5` | `bundleName = org.fellow99.oc.OCDesktop`、`label = OC Desktop`、`versionCode` 递增策略 | ✅ 已落地（见 `specs/006-signing-identity/`） |
+| `AppScope/app.json5` | `bundleName = org.fellow99.oc.OCDesktop`、`label = OC Desktop`、`versionCode` 递增策略 | ✅ 已落地（见 `specs/108-signing-identity/`） |
 | `electron/src/main/resources/<locale>/element/string.json` | 三处 `EntryAbility_label` 同步改名 | ✅ 已落地（改名漏一处即出现旧名） |
 
 > **安装期硬约束（🔶 沿用 dsh，本工程不随包分发 ELF，当前不适用）**：若将来把自有 ELF 写进 `.permission` 节，其声明的权限**不得超过** HAP 已声明的权限，否则安装失败。
@@ -258,8 +258,8 @@
 - **第一手 SDK**：`sdk/default/openharmony/toolchains/lib/PermissionDefinitions.json`（本机 DevEco SDK，735 条；本清单全部 level / since / grantMode / provisionEnable 的取值依据）。
 - `docs/工程规划-V2.md` §3.7（命名与签名）、§8（权限与签名全部小节）、§8.5（上架合规前置清单）、§10、§12（待人工确认事项）。
 - `docs/鸿蒙环境能力清单-v2.0.26.md` —— 能力侧结论（JIT、ELF、目录权限、shell 无可申请权限）。
-- `specs/006-signing-identity/` —— 本模块规格（FR-006-010 ~ 013、025、026 为权限声明面与对标要求）。
-- `specs/011-workspace-auth/` —— 目录授权与权限声明面的规格；`specs/012-data-dirs-sqlite/` —— 「随包原生库不需要二进制证书」；`specs/201-plugin-runtime/` —— 「不申请 `*PLUGIN*` 权限」。
+- `specs/108-signing-identity/` —— 本模块规格（FR-108-010 ~ 013、025、026 为权限声明面与对标要求）。
+- `specs/114-workspace-auth/` —— 目录授权与权限声明面的规格；`specs/115-data-dirs-sqlite/` —— 「随包原生库不需要二进制证书」；`specs/201-plugin-runtime/` —— 「不申请 `*PLUGIN*` 权限」。
 - 官方文档（转述，非本工程实测）：AGC 证书概述 / ACL 声明 / 受限开放权限清单 / `binary-sign-tool` / `file-persistPermission`（出处见 dsh `ACL申请清单-v2.md` §11）。
 
 ---
@@ -279,7 +279,7 @@
 1. `web_engine/src/main/module.json5` **与** `runtime-overlays/web_engine/src/main/module.json5` 同时删除该项（两者必须保持同 md5）；
 2. `scripts/collect-runtime.mjs`：把 `'ohos.permission.READ_WRITE_DESKTOP_DIRECTORY'` 从 `REQUIRED_PERMISSIONS` **与** `REASON_REQUIRED_PERMISSIONS` 移出，并移入 `FORBIDDEN_PERMISSIONS`（漏掉 `REASON_REQUIRED_PERMISSIONS` 会让阶段 10.6b 直接失败）；
 3. 三套 locale 的 `web_engine/src/main/resources/<locale>/element/string.json`（两份副本）可同时删除不再被引用的 `desktop_dir` key（可选，但不删会留下无用资源）；
-4. 同步本文件 §1/§3.3/§4/§5.1/§7.2/§9、`specs/006-signing-identity/{spec,plan}.md`、`specs/011-workspace-auth/{spec,plan}.md`、`docs/工程规划-V2.md` §8.1/§8.3、`README.md`，并**重建发布 Profile**（ACL 变化后必须重建）。
+4. 同步本文件 §1/§3.3/§4/§5.1/§7.2/§9、`specs/108-signing-identity/{spec,plan}.md`、`specs/114-workspace-auth/{spec,plan}.md`、`docs/工程规划-V2.md` §8.1/§8.3、`README.md`，并**重建发布 Profile**（ACL 变化后必须重建）。
 
 回退后重新执行 `node scripts/collect-runtime.mjs --verify-only`（阶段 10.6 应再次断言该权限**不存在**）。
 

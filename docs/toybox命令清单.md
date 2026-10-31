@@ -114,10 +114,10 @@
 
 | 命令 | 限制 | 本工程处置 |
 |---|---|---|
-| `chmod` / `chown` | 应用域：`hmdfs` 上**不报错但不落实**（请求 `600/644/640` → 回读恒 `660`；`755` → `770`）；`hmfs` 如实生效。shell 域下 `chmod 640` 生效 | 写入后**回读校验**，不一致即报错（`specs/012-data-dirs-sqlite/`） |
+| `chmod` / `chown` | 应用域：`hmdfs` 上**不报错但不落实**（请求 `600/644/640` → 回读恒 `660`；`755` → `770`）；`hmfs` 如实生效。shell 域下 `chmod 640` 生效 | 写入后**回读校验**，不一致即报错（`specs/115-data-dirs-sqlite/`） |
 | `ln -s`（软链） | 应用域 `EACCES`（`13900012`）；**shell 域成功** | 一律 **copy 物化**；不依赖软链 |
 | `ln`（硬链） | **两个域都被拒**（`hmdfs` 无 `.link` 处理器） | 原子写只走 `rename` |
-| `mount` / `umount` / `swapon` / `mkswap` / `insmod` / `rmmod` / `reboot` 等 | 无 root / 无权限；`reboot` 指向 `begetctl`（**会真的重启**） | 在工具层列入默认拒绝名单（`specs/010-tool-shell/` FR-010-035 同类项） |
+| `mount` / `umount` / `swapon` / `mkswap` / `insmod` / `rmmod` / `reboot` 等 | 无 root / 无权限；`reboot` 指向 `begetctl`（**会真的重启**） | 在工具层列入默认拒绝名单（`specs/207-plugin-shell/` FR-207-035 同类项） |
 | 交互式程序（`top` `watch` `more` `vi` 类） | **无 PTY、无 TTY**（平台级不可用） | 不承诺；工具描述引导使用非交互形式 |
 
 ### 8.3 与 opencode v2 依赖的对应关系
@@ -175,5 +175,5 @@ hdc shell "sh -c 'echo \$KSH_VERSION'"; hdc shell "md5sum /system/bin/sh /system
 
 - `docs/工程规划-V2.md` §5.3（PATH 与绝对路径规则）、§7.3（能力缺口与降级）、§7.4（内容搜索与 PTY 专项）、§7.1（bash 与文件类工具验收）。
 - `docs/鸿蒙环境能力清单.md` #18（可用命令集）、#5/#6/#7（`symlink` / `hardlink` / `chmod`）、#3（PTY）、#4（用户目录 ELF 不可执行）。
-- `specs/010-tool-shell/` —— 命令执行契约与能力披露要求（FR-010-032 ~ FR-010-035）。
+- `specs/207-plugin-shell/` —— 命令执行契约与能力披露要求（FR-207-032 ~ FR-207-035）。
 - 外部来源（转述，非本工程实测）：`dsh-desktop-hos/docs/toybox命令清单.md`（真机逐条探测，2026-09-22；含原始数据文件 `logs/20260922-1/toybox-probe/` 与复现脚本），以及 OpenHarmony `third_party_toybox` / `third_party_mksh` 的构建事实。

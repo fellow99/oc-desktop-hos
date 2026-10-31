@@ -12,7 +12,7 @@
 | 项 | 值 |
 |---|---|
 | 应用名 / bundleName | **OC Desktop** / `org.fellow99.oc.OCDesktop` |
-| 版本 | **`2.2.5`** / `versionCode` **20205**（规则 `major*10000 + minor*100 + patch`；版本规格见 `specs/101-version-2.2.5/`） |
+| 版本 | **`2.2.5`** / `versionCode` **20205**（规则 `major*10000 + minor*100 + patch`；版本规格见 `specs/011-version-2.2.5/`） |
 | 目标设备 | `2in1` / `tablet`（不做 phone） |
 | 上游基线 | opencode **v2.2.5**（tag `v2.2.5` / 提交 `9bbb8ce18c` / 分支 `Branch_v2.2.5`） |
 | 运行时 | Electron **37**（`v37.2.3-20260825.1` = Node **22.17.0** / Chromium 138 / ABI **v138**）；Electron 40（Node 24.11.1）为触发式备选 |
@@ -108,8 +108,8 @@ hdc shell aa start -a EntryAbility -b org.fellow99.oc.OCDesktop
   基本功能（DeepSeek API Key / 工作区 / 一次真实对话）验证。证据见 `docs/真机验证记录.md`。
 - ✅ **鸿蒙环境能力清单（v2.0.26）**：`docs/鸿蒙环境能力清单-v2.0.26.md`（真机实测；v0.1 版作为历史基线保留）。
 - ✅ **品牌化**：界面与元数据的 `OpenCode` 收敛为 `OC Desktop`，Logo/图标统一取父工程 `assets/` 物料
-  （详见 `specs/103-branding/`）。
-- ✅ **鸿蒙 JS 工具（插件）**：把设备上不可得的能力用纯 JS 插件替代（详见 `specs/102-harmony-js-tools/`）。
+  （详见 `specs/013-branding/`）。
+- ✅ **鸿蒙 JS 工具（插件）**：把设备上不可得的能力用纯 JS 插件替代（详见 `specs/206-js-tools/`）。
 - ✅ **Git 操作（插件）**：把纯 JS 的 `isomorphic-git` 嵌入服务端进程，提供 21 个 `git_*` 工具、覆盖 VCS provider
   （让自带 diff/分支界面可用）与「设置 → Git」凭据页（`~/.git-credentials`，`0600`）。详见 `specs/204-plugin-git/`
   与 `docs/204-插件-GIT.md`。

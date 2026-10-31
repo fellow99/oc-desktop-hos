@@ -37,7 +37,7 @@
 
 - 技能正文的具体措辞创作（属文档写作，不属规格）。
 - 技能框架本身的实现（发现路径、加载时机、工具面）——上游契约，见 §7 待验证项。
-- 插件机制（`specs/201-plugin-runtime/`）、命令执行契约（`specs/010-tool-shell/`）、搜索兜底与 PTY 专项（Phase 2）。
+- 插件机制（`specs/201-plugin-runtime/`）、命令执行契约（`specs/207-plugin-shell/`）、搜索兜底与 PTY 专项（Phase 2）。
 
 ## 2. 用户故事
 
@@ -53,7 +53,7 @@
 | 编号 | 需求 | 强度 | 来源 / 状态 |
 |---|---|---|---|
 | FR-202-001 | 壳专用技能内容 MUST 由规范源派生；维护顺序 MUST 为「先改规范源，再改技能」；MUST NOT 出现「技能有、规范源无」的结论 | MUST | 设计决策（同型工程的治理规则 🔶） |
-| FR-202-002 | 技能 MUST 至少覆盖：① 可用命令集与禁用项（无 `bash` / `git` / `rg` / `curl`；命令必须是 toybox 可达集合内）② 无 PTY / 无交互式程序 ③ 路径围栏与审批语义（越界会被拒、如何申请更宽范围）④ 数据与项目目录语义（项目根可写、数据在沙箱内）⑤ 插件档位现状（默认不启用安装） | MUST | `docs/鸿蒙环境能力清单.md` §2、`specs/010-tool-shell/`、`specs/011-workspace-auth/`、`specs/201-plugin-runtime/` |
+| FR-202-002 | 技能 MUST 至少覆盖：① 可用命令集与禁用项（无 `bash` / `git` / `rg` / `curl`；命令必须是 toybox 可达集合内）② 无 PTY / 无交互式程序 ③ 路径围栏与审批语义（越界会被拒、如何申请更宽范围）④ 数据与项目目录语义（项目根可写、数据在沙箱内）⑤ 插件档位现状（默认不启用安装） | MUST | `docs/鸿蒙环境能力清单.md` §2、`specs/207-plugin-shell/`、`specs/114-workspace-auth/`、`specs/201-plugin-runtime/` |
 | FR-202-003 | 技能 MUST NOT 声称设备不具备的能力；能力交付后 MUST 同步删除对应的「不可用」表述（过期表述视为缺陷） | MUST | 🔶 同型工程先例：技能未同步导致模型拒绝使用已交付工具 |
 | FR-202-004 | 技能 MUST NOT 承诺未获批权限带来的能力（例：桌面目录直写、后台常驻保活），并 MUST 说明「授权 + 重启」这类前置条件 | MUST | `docs/ACL申请清单.md` §4/§5；`docs/鸿蒙环境能力清单.md` #8/#13 |
 | FR-202-005 | 技能 MUST 标注能力缺口与**降级方式**（如内容搜索「返回空 + 明示」，不得静默失败） | MUST | `docs/工程规划-V2.md` §7.3、§7.4 |
@@ -77,7 +77,7 @@
 
 ### 场景 1：能力交付后同步
 
-- **Given** shell 能力（`specs/010-tool-shell/`）交付，规范源中该项状态由 ❌/⬜ 变为 ✅（本工程实测后）
+- **Given** shell 能力（`specs/207-plugin-shell/`）交付，规范源中该项状态由 ❌/⬜ 变为 ✅（本工程实测后）
 - **When** 执行技能同步
 - **Then** 技能中不再出现「本设备没有 shell」类表述；技能 `specVersion` 更新；漂移检查通过
 
@@ -95,7 +95,7 @@
 
 ### 场景 4：不得承诺未获批权限
 
-- **Given** `READ_WRITE_DESKTOP_DIRECTORY` 为 `system_basic` + `user_grant`（2026-10-14 起由 `006-signing-identity` 声明并随 ACL 批次申请；未获批或用户未授权时**不可直写**）
+- **Given** `READ_WRITE_DESKTOP_DIRECTORY` 为 `system_basic` + `user_grant`（2026-10-14 起由 `108-signing-identity` 声明并随 ACL 批次申请；未获批或用户未授权时**不可直写**）
 - **When** 审查技能正文
 - **Then** 技能中不存在「可直接写入桌面目录」类承诺；用户目录相关表述必须带授权与重启前置
 
@@ -140,5 +140,5 @@
 **本工程其它模块**
 
 - `docs/鸿蒙环境能力清单.md`（权威能力表）、`docs/toybox命令清单.md`（命令可达性）、`docs/ACL申请清单.md`（权限边界）。
-- `specs/010-tool-shell/`、`specs/011-workspace-auth/`、`specs/012-data-dirs-sqlite/`、`specs/201-plugin-runtime/` —— 技能必须与之保持一致的能力契约。
+- `specs/207-plugin-shell/`、`specs/114-workspace-auth/`、`specs/115-data-dirs-sqlite/`、`specs/201-plugin-runtime/` —— 技能必须与之保持一致的能力契约。
 - `docs/真机验证记录.md` —— 状态由 ⬜ → ✅ 的判定依据；技能同步由该文件的结论驱动。

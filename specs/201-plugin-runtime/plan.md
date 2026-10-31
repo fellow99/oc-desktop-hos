@@ -28,7 +28,7 @@
 | `@npmcli/arborist` / `@npmcli/config` | 上游 bundle 依赖闭包 | 进程内安装与 registry 配置 |
 | 上游插件子系统（`supervisor` / `module` / `source-directory` / `discovery`） | `../opencode` `packages/core` | 声明、发现、加载、治理 |
 | 物化脚本（构建期） | 本工程 `scripts/collect-app.mjs`（计划） | 壳专用插件 copy 物化 |
-| `specs/012-data-dirs-sqlite/` 提供的根 | 本工程 | `<userData>/config/opencode`、`<userData>/cache/opencode` |
+| `specs/115-data-dirs-sqlite/` 提供的根 | 本工程 | `<userData>/config/opencode`、`<userData>/cache/opencode` |
 
 ## 2. 关键决策
 

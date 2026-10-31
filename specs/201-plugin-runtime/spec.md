@@ -43,7 +43,7 @@ v2 的插件不是「壳自己约定的 ESM 包」，而是一套**内建机制*
 
 - 具体壳专用插件的功能实现（Phase 2 另立规格）。
 - 插件市场的浏览 / 搜索 / 更新检查 / 启停（opencode 无对应物，`docs/工程规划-V2.md` §4.4）。
-- 内容搜索兜底（候选补丁 `0004-search-ohos`）与 shell 后端（`specs/010-tool-shell/`）。
+- 内容搜索兜底（候选补丁 `0004-search-ohos`）与 shell 后端（`specs/207-plugin-shell/`）。
 - 鸿蒙插件包（`*.hsp` / 插件权限体系）——本工程插件是 **Node 包**，不是鸿蒙插件包（`docs/ACL申请清单.md`）。
 - 上游补丁机制本身（§6.2）。
 
@@ -94,7 +94,7 @@ v2 的插件不是「壳自己约定的 ESM 包」，而是一套**内建机制*
 | FR-201-019 | L2 启用前 MUST 完成 **O8** 前置验证：① 物化在 `hmfs` 上的 hardlink / symlink / `chmod` 语义（无 hardlink、应用域无 symlink、`chmod` 静默）② registry 可达性与镜像配置 ③ 安装体积 ④ 失败可见性 | MUST | 同上 §11.2 O8；⬜ 真机 PoC |
 | FR-201-020 | L2 启用时 SHOULD 同时提供：**硬开关**（候选补丁 `0005-plugin-gate`：在读 `ConfigPluginSource` 处短路，或提供「仅本地插件」档）与 registry 镜像配置（经 `@npmcli/config` 读取 `.npmrc` / `npm_config_*`） | SHOULD | 同上 §3.9、§6.2；⬜ 补丁落地 |
 | FR-201-021 | 远端 well-known 集成清单可贡献配置文档（理论上含 `plugins` 声明）MUST 被纳入审计：L0 / L1 下 MUST 保证其无法开启安装通道 | MUST | 同上 §3.9、§7.5（`core/src/config.ts#loadWellknown`、`core/src/wellknown.ts`）✅；⬜ 实施时确认来源与是否需要禁用 |
-| FR-201-022 | 规格、README 与 UI MUST 如实记录：**插件在服务端进程内执行，与服务端同等权限（文件读写 + 命令执行）**；MUST NOT 声称插件被沙箱隔离 | MUST | 同上 §7.5；与 `specs/010-tool-shell/` 同一安全面 |
+| FR-201-022 | 规格、README 与 UI MUST 如实记录：**插件在服务端进程内执行，与服务端同等权限（文件读写 + 命令执行）**；MUST NOT 声称插件被沙箱隔离 | MUST | 同上 §7.5；与 `specs/207-plugin-shell/` 同一安全面 |
 | FR-201-023 | 本工程 MUST NOT 申请任何鸿蒙插件类受限权限（`kernel.SUPPORT_PLUGIN` / `INSTALL_PLUGIN_BUNDLE` / `UNINSTALL_PLUGIN_BUNDLE` / `PLUGIN_UPDATE`） | MUST | `docs/工程规划-V2.md` §8.3；`docs/ACL申请清单.md` |
 
 ### 3.4 构建期与验收
@@ -177,7 +177,7 @@ v2 的插件不是「壳自己约定的 ESM 包」，而是一套**内建机制*
 - ⬜ **待验证** 1：`GET /api/plugin` 的响应字段与状态枚举（`active` / `pending` / `failed` / `blocked`）需与上游 handler 逐字段核对，本规格的字段名为转述。
 - ⬜ **待验证** 2：L1 的「绝对路径 / `file://` 目标」是否**完全跳过安装趟**（supervisor 两趟逻辑中第一趟 `install:false` 的行为需在本工程确认）。
 - ⬜ **待验证** 3：插件 SDK 注入（`opencode:plugin-v2*` 模块钩子 + `globalThis[Symbol.for(...)]`）在 Electron 37 / Node 22.17 下的实际可用性（产物前导是否完整保留）。
-- ⬜ **待验证** 4：`<XDG_CONFIG_HOME>/opencode` 与 `OPENCODE_CONFIG_DIR` 的覆盖关系（决定物化目标目录的唯一取值）；见 `specs/012-data-dirs-sqlite/` FR-012-007。
+- ⬜ **待验证** 4：`<XDG_CONFIG_HOME>/opencode` 与 `OPENCODE_CONFIG_DIR` 的覆盖关系（决定物化目标目录的唯一取值）；见 `specs/115-data-dirs-sqlite/` FR-115-007。
 - ⬜ **待验证** 5：兼容目录 `<home>/.claude`、`<home>/.agents` 在 L0 / L1 下是否需要屏蔽（`global` 开关的取值与影响）。
 - ⬜ **待验证** 6：远端 well-known 集成清单的真实来源、是否可贡献 `plugins`，以及是否需要显式禁用。
 - ⬜ **待验证** 7：**O8** —— 进程内 Arborist 在设备上的可用性（hmdfs/hmfs 物化语义、registry 可达性、体积、失败可见性）；须真机 PoC（声明一个最小 npm 包插件，观察 `pending` → 成功/`failed`）。
@@ -185,7 +185,7 @@ v2 的插件不是「壳自己约定的 ESM 包」，而是一套**内建机制*
 
 **约束**
 
-- 约束 1：**插件与服务端同权限**（文件读写 + 命令执行），与 `specs/010-tool-shell/` 的 shell 通道共同构成「进程内任意代码」安全面。
+- 约束 1：**插件与服务端同权限**（文件读写 + 命令执行），与 `specs/207-plugin-shell/` 的 shell 通道共同构成「进程内任意代码」安全面。
 - 约束 2：**热重载不可用**（`OPENCODE_FILEWATCHER_DISABLE=1`）属已定配置，不因插件通道而改变。
 - 约束 3：**不新增上游分叉**：L2 的闸门以「新增文件 + 少量开关式改动」的最小补丁实现。
 - 约束 4：**本工程插件是 Node 包**，与鸿蒙插件包无任何关系；不申请任何 `*PLUGIN*` 权限。
@@ -205,8 +205,8 @@ v2 的插件不是「壳自己约定的 ESM 包」，而是一套**内建机制*
 
 **本工程其它模块**
 
-- `specs/012-data-dirs-sqlite/` —— 提供 `<XDG_CONFIG_HOME>` / `<XDG_CACHE_HOME>`（物化与安装落点的前提）。
-- `specs/010-tool-shell/` —— 共同构成进程内代码执行安全面。
+- `specs/115-data-dirs-sqlite/` —— 提供 `<XDG_CONFIG_HOME>` / `<XDG_CACHE_HOME>`（物化与安装落点的前提）。
+- `specs/207-plugin-shell/` —— 共同构成进程内代码执行安全面。
 - `specs/202-skill-runtime-capabilities/` —— 能力清单的规范源；壳专用插件与壳专用技能 MUST 保持披露一致。
 - `docs/ACL申请清单.md` —— 「不申请 `*PLUGIN*` 权限」的判定依据。
 - `docs/真机验证记录.md` —— O8 与档位验收结论的落点。
