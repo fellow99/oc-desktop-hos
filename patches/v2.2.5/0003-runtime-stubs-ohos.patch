@@ -1,0 +1,89 @@
+diff --git a/packages/core/package.json b/packages/core/package.json
+index df938def59..f62d96b8ef 100644
+--- a/packages/core/package.json
++++ b/packages/core/package.json
+@@ -40,6 +40,7 @@
+     },
+     "#pty": {
+       "workerd": "./src/pty/pty.workerd.ts",
++      "ohos": "./src/pty/pty.ohos.ts",
+       "bun": "./src/pty/pty.bun.ts",
+       "node": "./src/pty/pty.node.ts",
+       "default": "./src/pty/pty.bun.ts"
+@@ -50,6 +51,7 @@
+     },
+     "#persistent-pty-binary": {
+       "workerd": "./src/persistent-pty/binary.workerd.ts",
++      "ohos": "./src/persistent-pty/binary.ohos.ts",
+       "bun": "./src/persistent-pty/binary.bun.ts",
+       "node": "./src/persistent-pty/binary.node.ts",
+       "default": "./src/persistent-pty/binary.bun.ts"
+diff --git a/packages/core/src/persistent-pty/binary.ohos.ts b/packages/core/src/persistent-pty/binary.ohos.ts
+new file mode 100644
+index 0000000000..f298ff94ae
+--- /dev/null
++++ b/packages/core/src/persistent-pty/binary.ohos.ts
+@@ -0,0 +1,23 @@
++/**
++ * HarmonyOS (`ohos`) variant of `#persistent-pty-binary` — `packages/core/package.json` maps the
++ * `ohos` condition here, and the CLI build puts `"ohos"` ahead of `"node"` in `resolve.conditions`.
++ *
++ * `binary.node.ts` hands `resolveBinary()` to the persistent-PTY transport, which spawns that
++ * binary: on HarmonyOS there is nothing to spawn. `opencode-pty` ships no ohos artifact, and a
++ * bundled ELF cannot be executed from the app sandbox (harmless-but-required stubbing, see
++ * docs/工程规划-V2.md §3.6 / §7.4b). `available = false` lets callers skip the daemon transport
++ * instead of failing at spawn time, and `resolveBinary()` reports the real reason when they do not.
++ *
++ * v2.2.4 made desktop terminals persistent and reworked `persistent-pty/` (pty-binding.ts); the
++ * platform constraint is unchanged, so the ohos variant remains a native-load-free unavailable stub.
++ * The variant also keeps this module free of native loads: any top-level load of a glibc
++ * `.node`/ELF in the `#pty` family would abort the entire bundle import.
++ */
++export const available = false
++
++export async function resolveBinary(): Promise<string> {
++  throw new Error(
++    "Persistent PTYs are unavailable on HarmonyOS: opencode-pty ships no ohos artifact and the " +
++      "platform denies executing a bundled ELF from the app sandbox",
++  )
++}
+diff --git a/packages/core/src/pty/pty.ohos.ts b/packages/core/src/pty/pty.ohos.ts
+new file mode 100644
+index 0000000000..dfd1658170
+--- /dev/null
++++ b/packages/core/src/pty/pty.ohos.ts
+@@ -0,0 +1,34 @@
++/**
++ * HarmonyOS (`ohos`) variant of `#pty` — `packages/core/package.json` maps the `ohos` condition
++ * here, and the CLI build puts `"ohos"` ahead of `"node"` in `resolve.conditions`.
++ *
++ * This stub is mandatory, not an optimization: `pty.node.ts` loads its backend eagerly at module
++ * top level with
++ *
++ *   const pty = createRequire(import.meta.url)(process.env.OPENCODE_NODE_PTY_PATH ?? "@lydell/node-pty")
++ *
++ * `@lydell/node-pty` has no HarmonyOS build (it ships glibc/musl `.node` addons), so that call
++ * throws while the bundle is being imported — and because `pty.ts` reaches it through
++ * `lazy(() => import("#pty"))` inside the module graph, a failed import aborts the whole bundle
++ * instead of failing one feature. Keeping this variant free of native loads turns a hard startup
++ * failure into a terminal-only failure.
++ *
++ * Terminals are unavailable at the platform level on HarmonyOS: SELinux denies forkpty/openpty/popen
++ * for the app process (docs/工程规划-V2.md §7.4b), so there is no fallback to implement — spawning
++ * always throws, and `available` documents the capability for anything that wants to probe it.
++ */
++import type { Opts, Proc } from "./pty.js"
++
++export type { Disp, Exit, Opts, Proc } from "./pty.js"
++
++export const available = false
++
++export function spawn(file: string, args: string[], opts: Opts): Proc {
++  void file
++  void args
++  void opts
++  throw new Error(
++    "Pseudo-terminals are unavailable on HarmonyOS: the platform denies forkpty/openpty/popen (SELinux), " +
++      "and neither @lydell/node-pty nor the opencode-pty helper ships an ohos build",
++  )
++}

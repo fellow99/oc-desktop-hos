@@ -110,10 +110,9 @@ export const ARCHIVE_ICON_ASSETS = {
   'icons/dev/apple-touch-icon.png': 'apple-touch-icon.png',
   'icons/dev/web-app-manifest-192x192.png': 'web-app-manifest-192x192.png',
   'icons/dev/web-app-manifest-512x512.png': 'web-app-manifest-512x512.png',
-  // 真机 DOM 探针实测（2026-10-14）：首页左上角那个图标就是这个资产
-  // （`<img class="shrink-0 rounded-[4px] shadow-[var(--v2-elevation-raised)] size-5" src="/_assets/64x64-*.png">`），
-  // 上游给的是**蓝底白字 opencode 图标**，必须换成自家品牌。
-  '_assets/64x64-D8-3fHil.png': 'app-64.png',
+  // v2.2.5 起上游 Web UI 不再投放 _assets/64x64-*.png（v2.1.2 时首页左上角图标资产）：
+  // 新 UI 应用标识统一由内联 SVG（data-component=opencode-logo，brandInlineLogo 换 path）与
+  // PWA 图标承载，故不再映射该资产位（映射不存在的 key 会被 pendingIcons 硬失败）。
 };
 
 /** 由物料生成的 UI 图标（archive 替换与断言共用同一份字节） */
@@ -123,9 +122,7 @@ export const WEB_ICON_SPECS = [
   { name: 'apple-touch-icon.png', kind: 'brand', from: 'logo-180-transparent.png', size: 180 },
   { name: 'web-app-manifest-192x192.png', kind: 'brand', from: 'logo-192-transparent.png', size: 192 },
   { name: 'web-app-manifest-512x512.png', kind: 'brand', from: 'logo-512-transparent.png', size: 512 },
-  // UI 内的应用图标（真机实测：`<img src="/_assets/64x64-*.png">`，首页左上角按 20×20 显示）——
-  // 上游给的是蓝底 opencode 图标，必须换成自家品牌（2026-10-14 需求）。
-  { name: 'app-64.png', kind: 'brand', from: 'logo-64-transparent.png', size: 64 },
+  // app-64.png（_assets/64x64-*.png）在 v2.2.5 随上游 UI 改版移除，不再生成。
 ];
 
 /**
@@ -717,44 +714,56 @@ export function brandWordmark(text, svgPaths) {
 /**
  * 新建会话页的大字标（`data-component=new-session-wordmark`）→ 文字 "OC Desktop"。
  *
- * 上游把这个字标实现成 **8 个字母的矢量字形**（viewBox `0 0 234 42`，字母 o/p/e/n/c/o/d/e 每 24 单位一个），
- * 因此在 a11y 树里既不是文本、也没有可业务化的 id —— 真机 DOM 探针才定位到
- * （见 `docs/鸿蒙环境能力清单-v2.0.26.md` §12）。用户要求把它换成文字 "OC Desktop"。
+ * v2.2.5 起上游把字标重做为 **JS 字形数组 + 动画 lodger**：8 个字母 o/p/e/n/c/o/d/e
+ * （cx 12/42/…/222，每 30 单位）以 `gr=[{cx,weak,stem,fill},…]` 字面量驱动，渲染时
+ * `<For each=gr>` 逐字写到两个 path；静态骨架（wordmark-flat 空 svg + 带 lodger 的装饰 svg）
+ * 与字母数据分离。
  *
- * 匹配方式：锚定 `<svg ... viewBox="0 0 234 42" ...><g>` 起始标记 + 上游**最后一笔**的字形路径 `d`
- * （唯一），再补到该 path 的 `>` 为止 —— 上游压缩器**省略了 `</g></svg>`**，所以不能用闭合标签定位。
- * 任何一处锚点缺失即视为「上游结构已变」：不替换，并让断言把它暴露出来（绝不盲目替换）。
+ * 替换策略（不碰渲染管线，避免误伤动画装饰）：
+ *  ① 把 `gr=[…8 字…]` 整个字面量替换为 `[]`（上游字母不再渲染；For 无条目）；
+ *  ② 在 `wordmark-box` 容器开标签后注入一个**绝对填充的 SVG <text>**（等宽居中），承载品牌名。
+ * 数组起止用第一笔 `M18 30H6V18H18V30Z`（首字 weak，唯一）与最后一笔
+ * `M216 12V18H228V12H216…`（尾字 stem，唯一）双向锚定，锚点缺失即拒绝替换。
  */
 export function brandNewSessionWordmark(text) {
   const quote = String.fromCharCode(34);
-  const startMarker = '<svg xmlns=http://www.w3.org/2000/svg ' + 'viewBox=' + quote + '0 0 234 42' + quote;
-  const marker = text.indexOf(startMarker);
-  if (marker === -1) return { text, replaced: false };
-  const group = text.indexOf('<g>', marker);
-  require_(group !== -1, '新建会话字标缺少 <g> 起始（上游 UI 结构已变），拒绝替换');
-  const lastLetter = text.indexOf('d=' + quote + UPSTREAM_NEW_SESSION_WORDMARK_LAST_PATH + quote, group);
-  require_(lastLetter !== -1, '新建会话字标缺少上游最后一笔路径（上游 UI 结构已变），拒绝替换');
-  const end = text.indexOf('>', lastLetter);
-  require_(end !== -1, '新建会话字标路径未闭合（上游 UI 结构已变），拒绝替换');
-  const region = text.slice(marker, end + 1);
-  require_(
-    !region.includes('${'),
-    '新建会话字标片段含模板插值（上游 UI 结构已变）：整体替换会丢掉动态绑定，拒绝替换',
-  );
+  const boxMarker = 'data-slot=wordmark-box';
+  const firstGlyph = 'M18 30H6V18H18V30Z';
+  const arrayStart = text.indexOf('gr=[{cx:12');
+  if (arrayStart === -1) return { text, replaced: false };
+  const first = text.indexOf(firstGlyph, arrayStart);
+  const last = text.indexOf(UPSTREAM_NEW_SESSION_WORDMARK_LAST_PATH, arrayStart);
+  require_(first !== -1 && last !== -1, '新建会话字标字形数组锚点缺失（上游 UI 结构已变），拒绝替换');
+  // 数组结束：最后一笔所在对象的结尾 `}]`
+  const arrayEnd = text.indexOf('}]', last);
+  require_(arrayEnd !== -1, '新建会话字标字形数组未闭合（上游 UI 结构已变），拒绝替换');
+  const boxOpenStart = text.indexOf(boxMarker);
+  require_(boxOpenStart !== -1, '新建会话字标缺少 wordmark-box 容器（上游 UI 结构已变），拒绝替换');
+  const boxOpenEnd = text.indexOf('>', boxOpenStart);
+  require_(boxOpenEnd !== -1, '新建会话字标容器未闭合（上游 UI 结构已变），拒绝替换');
   const attribute = (name, value) => name + '=' + quote + value + quote;
-  const replacement =
-    '<svg xmlns=' + quote + 'http://www.w3.org/2000/svg' + quote + ' ' +
-    attribute('viewBox', '0 0 234 42') +
-    ' fill=' + quote + 'none' + quote +
-    '><g><text ' +
-    attribute('x', '117') +
-    attribute('y', '33') +
-    attribute('text-anchor', 'middle') +
-    attribute('font-size', '34') +
-    attribute('font-weight', '600') +
-    attribute('fill', 'var(--icon-base)') +
-    '>' + BRAND_NAME + '</text></g></svg>';
-  return { text: text.slice(0, marker) + replacement + text.slice(end + 1), replaced: true };
+  const injected =
+    '<svg class=' + quote + 'absolute inset-0 size-full' + quote + ' viewBox=' + quote + '0 0 234 42' + quote + ' fill=' + quote + 'none' +
+      quote + '><text ' +
+      attribute('x', '117') +
+      attribute('y', '33') +
+      attribute('text-anchor', 'middle') +
+      attribute('font-size', '26') +
+      attribute('font-weight', '600') +
+      attribute('fill', 'var(--icon-base)') +
+      '>' + BRAND_NAME + '</text></svg>';
+  let next = text.slice(0, boxOpenEnd + 1) + injected + text.slice(boxOpenEnd + 1);
+  // 容器注入后索引平移，重新定位数组。startMarker 为 `gr=[{cx:12`：`gr=` 占 3 字符，
+  // 其后紧跟开括号 `[`，必须保留——把 `[…]` 的**内容**替换为空，得到合法的 `gr=[]`（不能连 `[` 一起切掉）。
+  const start2 = next.indexOf('gr=[{cx:12');
+  require_(start2 !== -1, '新建会话字标数组重定位失败，拒绝替换');
+  const bracketOpen = start2 + 3; // 指向 `[`
+  const lastAt2 = next.indexOf(UPSTREAM_NEW_SESSION_WORDMARK_LAST_PATH, bracketOpen);
+  const end2 = next.indexOf('}]', lastAt2);
+  require_(end2 !== -1 && next[bracketOpen] === '[' && next[end2 + 1] === ']', '新建会话字标数组边界异常，拒绝替换');
+  // 保留 `[`、显式补 `]`，再从数组 `}]` 的 `]` 之后一位续接（避免误删闭合括号）。
+  next = next.slice(0, bracketOpen + 1) + ']' + next.slice(end2 + 2);
+  return { text: next, replaced: true };
 }
 
 export function transformArchive(bytes, options = {}) {
@@ -803,7 +812,7 @@ export function transformArchive(bytes, options = {}) {
     stats.textAssets += 1;
     addCounts(stats.protectedBefore, text, PROTECTED_SUBSTRINGS);
     addCounts(stats.technicalBefore, text, TECHNICAL_MARKERS);
-    if (key === 'index.html') stats.titleBefore = /<title>([^<]*)<\/title>/.exec(text)?.[1] ?? null;
+    if (key === 'index.html') stats.titleBefore = /<title[^>]*>([^<]*)<\/title>/.exec(text)?.[1] ?? null;
     const brandedText = brandText(text);
     stats.brandReplacements += brandedText.replaced;
     const logo = brandInlineLogo(brandedText.text, material.svgPaths);
@@ -811,12 +820,15 @@ export function transformArchive(bytes, options = {}) {
     if (logo.replaced) stats.logoAssets.push(key);
     const wordmark = brandWordmark(withLogo, material.svgPaths);
     if (wordmark.replaced) stats.wordmarkAssets.push(key);
-    // 新建会话页的大字标（`data-component=new-session-wordmark`，上游是 8 个字母矢量字形 "opencode"）
-    // → 换成文字 "OC Desktop"（2026-10-14 需求）。
-    const sessionWordmark = brandNewSessionWordmark(wordmark.replaced ? wordmark.text : withLogo);
+    // 新建会话页的大字标（`data-component=new-session-wordmark`，v2.2.5 为 8 字母 JS 字形数组）
+    // → 字母数组置空并注入品牌文字 SVG（2026-10-14 需求）。仅处理含 wordmark-box 容器的资产，
+    // 避免把同名 234×42 的 progress-circle 装饰资产误替换。
+    const sessionWordmark = text.includes('data-slot=wordmark-box')
+      ? brandNewSessionWordmark(wordmark.replaced ? wordmark.text : withLogo)
+      : { text: wordmark.replaced ? wordmark.text : withLogo, replaced: false };
     if (sessionWordmark.replaced) stats.sessionWordmarkAssets = [...(stats.sessionWordmarkAssets ?? []), key];
     const next = sessionWordmark.replaced ? sessionWordmark.text : wordmark.replaced ? wordmark.text : withLogo;
-    if (key === 'index.html') stats.titleAfter = /<title>([^<]*)<\/title>/.exec(next)?.[1] ?? null;
+    if (key === 'index.html') stats.titleAfter = /<title[^>]*>([^<]*)<\/title>/.exec(next)?.[1] ?? null;
     addCounts(stats.protectedAfter, next, PROTECTED_SUBSTRINGS);
     addCounts(stats.technicalAfter, next, TECHNICAL_MARKERS);
     const encoded = Buffer.from(next, 'utf8');
@@ -897,7 +909,7 @@ export function assertArchiveBranded(bytes, options = {}) {
   // AC-01 标题
   const html = rawOf['index.html'];
   add('index.html 存在', Boolean(html), html ? `${html.length} 字节` : '缺失');
-  const title = html ? /<title>([^<]*)<\/title>/.exec(html.toString('utf8'))?.[1] : undefined;
+  const title = html ? /<title[^>]*>([^<]*)<\/title>/.exec(html.toString('utf8'))?.[1] : undefined;
   add(`index.html <title> === ${BRAND_NAME}`, title === BRAND_NAME, `实际: ${JSON.stringify(title)}`);
 
   // AC-02 PWA manifest
@@ -966,19 +978,22 @@ export function assertArchiveBranded(bytes, options = {}) {
   );
   add('上游 720×129 字标几何已消失', !wordmarkText.includes(UPSTREAM_WORDMARK_PATH), UPSTREAM_WORDMARK_PATH.slice(0, 48));
 
-  // 新建会话页大字标（2026-10-14 需求）：上游 8 字母 "opencode" 字形必须消失，且换成 "OC Desktop"
+  // 新建会话页大字标（2026-10-14 需求）：v2.2.5 为 JS 字形数组（gr=[…]）+ 动画 lodger；
+  // 品牌化后该容器资产内字形数组置空、注入品牌 <text>，上游第一/最后一笔几何必须消失。
   const sessionWordmarkKeys = keys.filter((key) =>
-    (rawOf[key]?.toString('utf8') ?? '').includes('data-component=new-session-wordmark'),
+    (rawOf[key]?.toString('utf8') ?? '').includes('data-slot=wordmark-box'),
   );
-  const sessionText = sessionWordmarkKeys
-    .concat(keys.filter((key) => (rawOf[key]?.toString('utf8') ?? '').includes('viewBox="0 0 234 42"')))
-    .map((key) => rawOf[key].toString('utf8'))
-    .join('\n');
-  add('新建会话字标资产存在（viewBox 0 0 234 42）', sessionText.includes('viewBox="0 0 234 42"'), `${sessionWordmarkKeys.length} 个容器资产`);
+  const sessionText = sessionWordmarkKeys.map((key) => rawOf[key].toString('utf8')).join('\n');
+  add('新建会话字标容器资产存在（data-slot=wordmark-box）', sessionWordmarkKeys.length > 0, `${sessionWordmarkKeys.length} 个资产`);
   add(
-    `新建会话字标已换成 ${BRAND_NAME} 文本`,
+    `新建会话字标已注入 ${BRAND_NAME} 文本`,
     sessionText.includes('>' + BRAND_NAME + '</text>'),
     `探针: >${BRAND_NAME}</text>`,
+  );
+  add(
+    '上游 234×42 字形数组第一笔几何已消失',
+    !sessionText.includes(UPSTREAM_NEW_SESSION_WORDMARK_FIRST_PATH),
+    UPSTREAM_NEW_SESSION_WORDMARK_FIRST_PATH,
   );
   add(
     '上游 234×42 字标最后一笔几何已消失',

@@ -1,0 +1,32 @@
+diff --git a/packages/core/src/shell/select.ts b/packages/core/src/shell/select.ts
+index 6645454c0a..9cd62bc39d 100644
+--- a/packages/core/src/shell/select.ts
++++ b/packages/core/src/shell/select.ts
+@@ -53,7 +53,16 @@ export interface Interface extends State.Transformable<Editor> {
+ export class Service extends Context.Service<Service, Interface>()("@opencode/ShellSelect") {}
+ 
+ function stat(file: string) {
+-  return statSync(file, { throwIfNoEntry: false }) ?? undefined
++  try {
++    return statSync(file, { throwIfNoEntry: false }) ?? undefined
++  } catch {
++    // HarmonyOS（ohos）应用域里对系统路径 stat 会抛 `EACCES`（而不是 `ENOENT`），
++    // `throwIfNoEntry` 兜不住它。若让它冒泡，`environment()` 会在**每次模型请求前**失败：
++    // 会话能建、用户消息能进、SSE 也连得上，但助手永远不回复
++    // （真机日志只有 `Failed to drain Session: EACCES ... stat '/bin/sh'`）。
++    // 这里把「不可读」与「不存在」一视同仁地当作「该 shell 不可用」。
++    return undefined
++  }
+ }
+ 
+ function findExecutable(name: string, bin?: string) {
+@@ -135,6 +144,9 @@ function fallback(bin?: string) {
+   if (process.platform === "darwin") return "/bin/zsh"
+   const bash = findExecutable("bash", bin)
+   if (bash) return bash
++  // ohos 上没有 `/bin/sh`；设备侧真正可执行的是 `/system/bin/sh`（由壳侧通过
++  // `OC_SHELL_FALLBACK` 注入，见 oc-desktop-hos/src-main/main.js 的 configureEnvironment）。
++  if (process.env.OC_SHELL_FALLBACK) return process.env.OC_SHELL_FALLBACK
+   return "/bin/sh"
+ }
+ 

@@ -12,9 +12,9 @@
 | 项 | 值 |
 |---|---|
 | 应用名 / bundleName | **OC Desktop** / `org.fellow99.oc.OCDesktop` |
-| 版本 | **`2.1.2`** / `versionCode` **20102**（规则 `major*10000 + minor*100 + patch`；版本规格见 `specs/101-version-2.1.2/`） |
+| 版本 | **`2.2.5`** / `versionCode` **20205**（规则 `major*10000 + minor*100 + patch`；版本规格见 `specs/101-version-2.2.5/`） |
 | 目标设备 | `2in1` / `tablet`（不做 phone） |
-| 上游基线 | opencode **v2.1.2**（tag `v2.1.2` / 提交 `a517687fde` / 分支 `Branch_v2.1.2`） |
+| 上游基线 | opencode **v2.2.5**（tag `v2.2.5` / 提交 `9bbb8ce18c` / 分支 `Branch_v2.2.5`） |
 | 运行时 | Electron **37**（`v37.2.3-20260825.1` = Node **22.17.0** / Chromium 138 / ABI **v138**）；Electron 40（Node 24.11.1）为触发式备选 |
 | 工程规划 | [`docs/工程规划-V2.md`](docs/工程规划-V2.md)（**唯一设计依据**；V1 为历史基线） |
 | 骨架镜像源 | `dsh-desktop-hos`（只镜框架，不搬业务） |
@@ -27,7 +27,7 @@ electron/            entry 模块：运行时 SO + Chromium 资源 + Ability 装
 web_engine/          HAR：ArkTS 桥接层 + resfile 承载应用产物（含 opencode-dist.tar.gz）
 src-main/            Electron 主进程源码（main.js / sidecar.js / tar-extract.js）
 scripts/             构建流水线（见下）
-patches/v2.1.2/      对上游的幂等补丁（含 README；v2.0.26 目录为历史锚点）
+patches/v2.2.5/      对上游的幂等补丁（含 README；v2.1.2/v2.0.26 目录为历史锚点）
 runtime-overlays/    copy 后回盖白名单（模块清单 / 显示名资源）
 specs/               NNN-name/{spec.md,plan.md} 规格体系（索引见 specs/README.md）
 docs/                工程规划 + 四件套（能力清单 / ACL 清单 / toybox 清单 / 真机验证记录）
